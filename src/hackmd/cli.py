@@ -174,6 +174,56 @@ def note():
     pass
 
 @note.command()
+@click.argument('note_id')
+@click.option('--output', '-o', help='Save to file')
+def get(note_id, output):
+    """Get a note by ID or URL."""
+    config = _load_config()
+    if not config:
+        click.echo("✗ Not authenticated. Run: hackmd auth login", err=True)
+        sys.exit(1)
+
+    import requests
+    import re
+
+    # Extract ID from URL if provided
+    if note_id.startswith('http'):
+        # Try to extract ID from various HackMD URL formats
+        patterns = [
+            r'hackmd\.io/([a-zA-Z0-9_-]+)(?:\?|$)',  # hackmd.io/ID
+            r'hackmd\.io/@[^/]+/([a-zA-Z0-9_-]+)',   # hackmd.io/@user/ID
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, note_id)
+            if match:
+                note_id = match.group(1)
+                break
+
+    token = config['api_token']
+    headers = {'Authorization': f'Bearer {token}'}
+
+    try:
+        # Try to get the note
+        response = requests.get(f'https://api.hackmd.io/v1/notes/{note_id}', headers=headers)
+
+        if response.status_code == 200:
+            note = response.json()
+            content = note.get('content', '')
+
+            if output:
+                with open(output, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                click.echo(f"✓ Note saved to {output}")
+            else:
+                click.echo(content)
+        else:
+            click.echo(f"✗ Error fetching note: {response.status_code}", err=True)
+            if response.text:
+                click.echo(f"  {response.text}", err=True)
+    except Exception as e:
+        click.echo(f"✗ Error: {e}", err=True)
+
+@note.command()
 @click.option('--title', '-t', required=True, help='Note title')
 @click.option('--content', '-c', help='Note content')
 def create(title, content):

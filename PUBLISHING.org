@@ -1,0 +1,206 @@
+#+TITLE: Publishing to PyPI
+#+AUTHOR: Aidan Pace (aygp-dr)
+#+DATE: 2025-09-21
+
+* Prerequisites
+
+1. Create PyPI account at [[https://pypi.org/account/register/]]
+2. Generate API token at [[https://pypi.org/manage/account/token/]]
+3. Install build tools:
+   #+begin_src bash
+   pip install build twine
+   #+end_src
+
+* Build Process
+
+** Clean Previous Builds
+
+#+begin_src bash
+rm -rf dist/ build/ *.egg-info src/*.egg-info
+#+end_src
+
+** Generate README.md from README.org
+
+#+begin_src bash
+gmake readme
+#+end_src
+
+** Build the Package
+
+#+begin_src bash
+python -m build
+#+end_src
+
+** Check the Distribution
+
+#+begin_src bash
+twine check dist/*
+#+end_src
+
+* Publishing
+
+** Test PyPI (Recommended First)
+
+1. Upload to TestPyPI:
+   #+begin_src bash
+   twine upload --repository testpypi dist/*
+   #+end_src
+
+2. Test installation:
+   #+begin_src bash
+   pip install --index-url https://test.pypi.org/simple/ hackmd-cli
+   #+end_src
+
+** Production PyPI
+
+1. Upload to PyPI:
+   #+begin_src bash
+   twine upload dist/*
+   #+end_src
+
+2. Verify installation:
+   #+begin_src bash
+   pip install hackmd-cli
+   #+end_src
+
+* Using uv for Publishing
+
+With uv, you can also publish directly:
+
+#+begin_src bash
+# Build
+uv build
+
+# Publish (requires UV_PUBLISH_TOKEN env var or interactive auth)
+uv publish
+#+end_src
+
+* GitHub Actions (Automated)
+
+The workflow is configured in ~.github/workflows/publish.yml~:
+
+#+begin_src yaml
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+
+    - name: Build package
+      run: python -m build
+
+    - name: Publish to PyPI
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: twine upload dist/*
+#+end_src
+
+** Setting up Secrets
+
+1. Go to repository Settings → Secrets and variables → Actions
+2. Add repository secrets:
+   - ~PYPI_API_TOKEN~ - Your PyPI API token
+   - ~TEST_PYPI_API_TOKEN~ - Your TestPyPI API token
+
+* Version Management
+
+** Files to Update
+
+1. Update version in:
+   - ~pyproject.toml~
+   - ~src/hackmd/__init__.py~
+
+2. Commit with conventional commit:
+   #+begin_src bash
+   git commit -m "chore: bump version to X.Y.Z"
+   #+end_src
+
+3. Create tag:
+   #+begin_src bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   #+end_src
+
+4. Create GitHub release:
+   #+begin_src bash
+   gh release create vX.Y.Z --generate-notes
+   #+end_src
+
+** Versioning Strategy
+
+We follow [[https://semver.org/][Semantic Versioning]]:
+- ~MAJOR.MINOR.PATCH~
+- ~0.x.y~ - Development releases (breaking changes allowed)
+- ~1.0.0~ - First stable release
+- Pre-releases: ~X.Y.Z-alpha.N~, ~X.Y.Z-beta.N~, ~X.Y.Z-rc.N~
+
+* Makefile Targets
+
+The Makefile includes convenient targets:
+
+#+begin_src makefile
+# Clean, build, and check
+gmake clean build check-dist
+
+# Publish to TestPyPI
+gmake publish-test
+
+# Publish to production PyPI
+gmake publish
+#+end_src
+
+* Troubleshooting
+
+** Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| Missing README.md | Run ~gmake readme~ first |
+| Authentication failed | Check your PyPI token is valid |
+| Package exists | Increment version number |
+| Invalid metadata | Check pyproject.toml syntax |
+| Build fails | Ensure all dependencies are installed |
+
+** Validation Checklist
+
+- [ ] Version numbers updated in all locations
+- [ ] README.md generated from README.org
+- [ ] Tests passing (~gmake test~)
+- [ ] ~twine check dist/*~ passes
+- [ ] Changelog updated
+- [ ] Git tag created
+- [ ] GitHub release created
+
+* PyPI Project URLs
+
+Once published, the package will be available at:
+- PyPI: [[https://pypi.org/project/hackmd-cli/]]
+- TestPyPI: [[https://test.pypi.org/project/hackmd-cli/]]
+- Documentation: [[https://github.com/aygp-dr/hackmd-cli-toolkit]]
+
+* Package Metadata
+
+The package metadata in ~pyproject.toml~ includes:
+- Package name: ~hackmd-cli~
+- License: MIT
+- Python versions: 3.8+
+- Keywords: hackmd, cli, markdown, notes, api
+- Classifiers: Development status, intended audience, etc.
+
+---
+/For questions or issues, contact the maintainers or open an issue on GitHub./

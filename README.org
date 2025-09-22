@@ -2,10 +2,10 @@
 #+AUTHOR: Aidan Pace (aygp-dr)
 #+DATE: 2025-09-21
 
-[[https://pypi.org/project/hackmd-cli/][https://img.shields.io/pypi/v/hackmd-cli.svg]]
-[[https://github.com/aygp-dr/hackmd-cli-toolkit/blob/main/LICENSE][https://img.shields.io/github/license/aygp-dr/hackmd-cli-toolkit.svg]]
-[[https://github.com/aygp-dr/hackmd-cli-toolkit/actions][https://img.shields.io/github/actions/workflow/status/aygp-dr/hackmd-cli-toolkit/tests.yml?label=tests]]
-[[https://pypi.org/project/hackmd-cli/][https://img.shields.io/pypi/pyversions/hackmd-cli.svg]]
+[[https://github.com/aygp-dr/hackmd-cli-toolkit/releases][https://img.shields.io/github/v/release/aygp-dr/hackmd-cli-toolkit?include_prereleases]]
+[[https://github.com/aygp-dr/hackmd-cli-toolkit/actions/workflows/tests.yml][https://img.shields.io/github/actions/workflow/status/aygp-dr/hackmd-cli-toolkit/tests.yml?branch=main&label=tests]]
+[[https://github.com/aygp-dr/hackmd-cli-toolkit/blob/main/LICENSE][https://img.shields.io/badge/license-MIT-blue.svg]]
+[[https://www.python.org/downloads/][https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue]]
 
 * Overview
 
