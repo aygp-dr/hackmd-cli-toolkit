@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hackmd"]
+
+[project]
+name = "hackmd-cli"
+version = "0.1.0"
+description = "Command-line interface for HackMD"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+    { name = "Aidan Pace", email = "apace@defrecord.com" }
+]
+dependencies = [
+    "click>=8.0",
+    "httpx>=0.24",
+    "pydantic>=2.0",
+    "rich>=13.0",
+    "keyring>=24.0",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+hackmd = "hackmd.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-asyncio>=0.21",
+    "black>=23.0",
+    "ruff>=0.1",
+    "mypy>=1.0",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py38"
+
+[tool.black]
+line-length = 88
+target-version = ["py38", "py39", "py310", "py311"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --cov=hackmd --cov-report=term-missing"
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true

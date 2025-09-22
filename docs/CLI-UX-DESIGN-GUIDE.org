@@ -1,0 +1,714 @@
+#+TITLE: HackMD CLI UX Design Guide
+#+AUTHOR: Aidan Pace (aygp-dr)
+#+DATE: 2025-09-21
+#+OPTIONS: toc:3 num:t
+
+* Executive Summary
+
+This document defines the user experience design principles and patterns for the HackMD CLI toolkit, based on extensive analysis of successful CLI tools including GitHub CLI (gh), AWS CLI, Git, ghq, kubectl, Docker, and other modern command-line interfaces.
+
+* Core Design Principles
+
+** 1. Consistency Above All
+- Uniform command structure across all operations
+- Predictable flag naming and behavior
+- Consistent output formatting
+- Standard error handling patterns
+
+** 2. Progressive Disclosure
+- Simple commands for common tasks
+- Advanced options available but not required
+- Helpful defaults with override capability
+- Context-aware help and suggestions
+
+** 3. Unix Philosophy Compliance
+- Do one thing well
+- Composable with other tools
+- Text streams as universal interface
+- Silence is golden (no unnecessary output)
+
+** 4. Developer Ergonomics
+- Memorable command names
+- Logical command grouping
+- Tab completion support
+- Minimal typing for common operations
+
+* Command Structure Analysis
+
+** Industry Patterns Comparison
+
+| Tool    | Structure      | Example                    | Rationale                        |
+|---------+----------------+----------------------------+----------------------------------|
+| gh      | noun-verb      | ~gh repo create~           | Resource-focused, intuitive      |
+| aws     | noun-verb      | ~aws s3 cp~                | Service-oriented grouping        |
+| docker  | noun-verb      | ~docker container run~     | Object-oriented approach         |
+| git     | verb-noun      | ~git add file~             | Action-focused, legacy           |
+| kubectl | verb-noun/both | ~kubectl get pods~         | Flexible, action-oriented        |
+| npm     | verb-noun      | ~npm install package~      | Task-focused                     |
+
+** Recommendation: Noun-Verb Structure
+
+Based on modern CLI trends and user research, we adopt the *noun-verb* structure:
+
+#+begin_src bash
+hackmd <resource> <action> [options] [arguments]
+#+end_src
+
+Rationale:
+1. Groups related operations naturally
+2. Enables better command discovery
+3. Aligns with RESTful mental model
+4. Consistent with GitHub CLI (similar audience)
+
+* Command Taxonomy
+
+** Primary Resources (Nouns)
+
+#+begin_src org
+hackmd
+├── note        # Personal note management
+├── team        # Team operations
+├── auth        # Authentication
+├── config      # Configuration
+├── sync        # Synchronization
+├── template    # Template management
+├── export      # Export operations
+├── import      # Import operations
+└── api         # Direct API access
+#+end_src
+
+** Standard Actions (Verbs)
+
+| Action   | Description                  | Applicable Resources        |
+|----------+------------------------------+-----------------------------|
+| create   | Create new resource          | note, team, template        |
+| list     | List resources               | note, team, template        |
+| get/show | Display single resource      | note, team, config          |
+| update   | Modify existing resource     | note, team, template        |
+| delete   | Remove resource              | note, team, template        |
+| search   | Find resources               | note                        |
+| push     | Upload to HackMD             | sync                        |
+| pull     | Download from HackMD         | sync                        |
+| login    | Authenticate                 | auth                        |
+| logout   | Deauthenticate               | auth                        |
+
+* Flag Design Standards
+
+** Global Flags
+
+These flags are available for all commands:
+
+| Short | Long            | Description                  | Default    |
+|-------+-----------------+------------------------------+------------|
+| -h    | --help          | Show help                    | -          |
+| -v    | --version       | Show version                 | -          |
+| -q    | --quiet         | Suppress non-error output    | false      |
+|       | --verbose       | Verbose output               | false      |
+|       | --debug         | Debug output                 | false      |
+| -o    | --output        | Output format                | table      |
+| -c    | --config        | Config file path             | ~/.config  |
+|       | --no-color      | Disable colored output       | auto       |
+|       | --json          | JSON output (alias for -o)   | false      |
+
+** Resource-Specific Flags
+
+*** Note Operations
+
+| Short | Long              | Description                | Example                     |
+|-------+-------------------+----------------------------+-----------------------------|
+| -t    | --title           | Note title                 | --title "Meeting Notes"     |
+| -c    | --content         | Note content               | --content "# Agenda"        |
+| -f    | --file            | Content from file          | --file notes.md             |
+| -T    | --template        | Use template               | --template meeting          |
+| -F    | --folder          | Target folder              | --folder "Work/Projects"    |
+| -g    | --tag             | Tags (comma-separated)     | --tag "urgent,todo"         |
+| -p    | --permission-read | Read permission level      | --permission-read everyone  |
+| -w    | --permission-write| Write permission level     | --permission-write owner    |
+| -l    | --limit           | Result limit               | --limit 20                  |
+| -s    | --sort            | Sort order                 | --sort updated              |
+
+*** Team Operations
+
+| Short | Long         | Description          | Example              |
+|-------+--------------+----------------------+----------------------|
+| -t    | --team       | Team identifier      | --team engineering   |
+| -r    | --role       | User role            | --role admin         |
+| -m    | --member     | Team member          | --member user@email  |
+
+* Output Format Specifications
+
+** Format Options
+
+#+begin_src bash
+--output <format>  # or -o <format>
+#+end_src
+
+Supported formats:
+- ~table~ (default for TTY)
+- ~json~ (default for non-TTY)
+- ~yaml~
+- ~csv~
+- ~tsv~
+- ~raw~ (unformatted)
+- ~id~ (IDs only)
+
+** Table Format
+
+Default human-readable format with smart column width:
+
+#+begin_example
+ID          TITLE                   UPDATED       TAGS
+abc123      Meeting Notes          2h ago        meeting
+def456      Project Specification  1d ago        project,spec
+ghi789      Bug Report             3d ago        bug,urgent
+#+end_example
+
+** JSON Format
+
+Machine-readable with proper structure:
+
+#+begin_src json
+{
+  "items": [
+    {
+      "id": "abc123",
+      "title": "Meeting Notes",
+      "updated": "2025-09-21T10:00:00Z",
+      "tags": ["meeting"]
+    }
+  ],
+  "metadata": {
+    "total": 3,
+    "limit": 20,
+    "offset": 0
+  }
+}
+#+end_src
+
+** Pipeline-Friendly Output
+
+- Use stdout for data
+- Use stderr for progress/status
+- Exit codes: 0 (success), 1 (error), 2 (usage error)
+- Support ~--filter~ for jq-like filtering
+- Support ~--query~ for JSONPath queries
+
+* Configuration Management
+
+** Configuration Hierarchy
+
+Priority order (highest to lowest):
+1. Command-line flags
+2. Environment variables
+3. Project config (.hackmd.yml)
+4. User config (~/.config/hackmd/config.yml)
+5. System config (/etc/hackmd/config.yml)
+
+** Configuration File Format
+
+#+begin_src yaml
+# ~/.config/hackmd/config.yml
+api:
+  token: ${HACKMD_API_TOKEN}  # Support env var expansion
+  base_url: https://api.hackmd.io/v1
+  timeout: 30
+  retry: 3
+
+defaults:
+  team: engineering
+  folder: Work
+  permission:
+    read: signed_in
+    write: owner
+    comment: signed_in_users
+
+output:
+  format: table
+  color: auto
+  pager: less -R
+
+sync:
+  ignore_patterns:
+    - "*.tmp"
+    - ".git/**"
+  conflict_strategy: prompt  # prompt|local|remote|merge
+
+aliases:
+  ns: note search
+  nc: note create
+  tl: team list
+#+end_src
+
+** Environment Variables
+
+| Variable                | Description              | Example                    |
+|-------------------------+--------------------------+----------------------------|
+| HACKMD_API_TOKEN        | API authentication token | abc123...                  |
+| HACKMD_API_URL          | API base URL             | https://api.hackmd.io/v1   |
+| HACKMD_DEFAULT_TEAM     | Default team             | engineering                |
+| HACKMD_CONFIG_DIR       | Config directory         | ~/.config/hackmd           |
+| HACKMD_CACHE_DIR        | Cache directory          | ~/.cache/hackmd            |
+| NO_COLOR                | Disable colors           | 1                          |
+| HACKMD_OUTPUT_FORMAT    | Default output format    | json                       |
+
+* Authentication Patterns
+
+** Token-Based Authentication
+
+Primary authentication method using API tokens:
+
+#+begin_src bash
+# Interactive setup
+$ hackmd auth login
+? Enter your HackMD API token: ****
+✓ Authentication successful
+✓ Token saved to secure keyring
+
+# Non-interactive
+$ hackmd auth login --token abc123...
+
+# Via environment
+$ export HACKMD_API_TOKEN=abc123...
+$ hackmd note list
+#+end_src
+
+** Token Storage
+
+- Primary: System keyring (keychain on macOS, gnome-keyring on Linux)
+- Fallback: Encrypted file in ~/.config/hackmd/.token
+- Never store in plain text
+- Support token rotation
+
+** Multi-Account Support
+
+#+begin_src bash
+# Add account
+$ hackmd auth add --profile work --token abc123...
+
+# Switch account
+$ hackmd auth use work
+
+# Use specific profile for command
+$ hackmd --profile personal note list
+#+end_src
+
+* Error Handling
+
+** Error Message Structure
+
+#+begin_src text
+Error: <brief description>
+
+<detailed explanation>
+
+Try:
+  - <suggestion 1>
+  - <suggestion 2>
+
+For more information, run: hackmd help <relevant-command>
+#+end_src
+
+** Error Categories
+
+| Code | Category        | Description                    | User Action                |
+|------+-----------------+--------------------------------+----------------------------|
+| 1    | General Error   | Unexpected failure             | Report bug                 |
+| 2    | Usage Error     | Invalid command/options        | Check help                 |
+| 3    | Auth Error      | Authentication failed          | Check token                |
+| 4    | Network Error   | Connection issues              | Check connection           |
+| 5    | Not Found       | Resource doesn't exist         | Verify ID/name             |
+| 6    | Permission      | Insufficient permissions       | Check permissions          |
+| 7    | Validation      | Invalid input                  | Fix input                  |
+| 8    | Conflict        | Resource conflict              | Resolve conflict           |
+| 9    | Rate Limit      | API rate limit exceeded        | Wait and retry             |
+
+** Verbose Error Output
+
+#+begin_src bash
+$ hackmd note get abc123 --verbose
+DEBUG: Request: GET https://api.hackmd.io/v1/notes/abc123
+DEBUG: Headers: {'Authorization': '***', 'User-Agent': 'hackmd-cli/1.0.0'}
+ERROR: HTTP 404: Note not found
+ERROR: Response: {"error": "Note with ID 'abc123' does not exist"}
+Error: Note not found
+
+The note with ID 'abc123' does not exist or you don't have permission to access it.
+
+Try:
+  - List your notes: hackmd note list
+  - Check if you're using the correct team: hackmd team list
+  - Verify your permissions for this note
+
+For more information, run: hackmd help note get
+#+end_src
+
+* Interactive Mode
+
+** Smart Prompting
+
+Prompt for required missing parameters:
+
+#+begin_src bash
+$ hackmd note create
+? Note title: Meeting Notes
+? Select folder: Work/Meetings
+? Add tags (comma-separated): meeting,weekly
+? Set read permission: (owner/signed_in/everyone) signed_in
+✓ Note created: abc123
+#+end_src
+
+** Interactive Selection
+
+Use fuzzy finder for resource selection:
+
+#+begin_src bash
+$ hackmd note edit
+? Select note to edit (fuzzy search):
+> Meet|
+  ┌─────────────────────────────────────┐
+  │ Meeting Notes 2025-09-21            │
+  │ Meeting Notes 2025-09-14            │
+  │ Team Meeting Agenda                  │
+  └─────────────────────────────────────┘
+#+end_src
+
+** Non-Interactive Mode
+
+Force non-interactive for automation:
+
+#+begin_src bash
+$ hackmd note create --non-interactive --title "Auto Note"
+Error: Missing required parameter: --content or --file
+
+# Or via environment
+$ HACKMD_INTERACTIVE=false hackmd note create
+#+end_src
+
+* Progress Indicators
+
+** Long-Running Operations
+
+#+begin_src text
+$ hackmd sync push ./docs
+Scanning local files... done (42 files)
+Comparing with remote... done
+Uploading changes:
+  ↑ docs/api.md .................. done
+  ↑ docs/guide.md ................ done
+  ↑ docs/reference.md ............ 45%  [####------]
+#+end_src
+
+** Batch Operations
+
+#+begin_src text
+$ hackmd note delete --batch notes.txt
+Deleting 15 notes:
+  [1/15]  abc123 ✓
+  [2/15]  def456 ✓
+  [3/15]  ghi789 ⚠ (not found, skipping)
+  [4/15]  jkl012 ✓
+  ...
+Successfully deleted 14 notes (1 skipped)
+#+end_src
+
+* Tab Completion
+
+** Bash Completion
+
+#+begin_src bash
+# Generate completion script
+$ hackmd completion bash > hackmd-completion.bash
+$ source hackmd-completion.bash
+
+# Usage
+$ hackmd no<TAB>
+note
+
+$ hackmd note cr<TAB>
+create
+
+$ hackmd note create --t<TAB>
+--tag      --template --title
+#+end_src
+
+** Dynamic Completion
+
+Complete resource IDs and names:
+
+#+begin_src bash
+$ hackmd note get <TAB>
+abc123  (Meeting Notes)
+def456  (Project Spec)
+ghi789  (Bug Report)
+
+$ hackmd team note create --team <TAB>
+engineering
+marketing
+design
+#+end_src
+
+* Accessibility
+
+** Screen Reader Support
+
+- Provide alternative text for progress indicators
+- Use semantic output structure
+- Support --no-unicode flag for compatibility
+- Include descriptive headers in table output
+
+** Keyboard Navigation
+
+- Support standard readline keybindings
+- Vim/Emacs mode for interactive prompts
+- Escape sequences for cancellation
+- Clear keyboard shortcuts documentation
+
+** High Contrast Mode
+
+#+begin_src bash
+# Auto-detect from system
+$ hackmd note list
+
+# Force high contrast
+$ hackmd --high-contrast note list
+
+# Disable colors entirely
+$ hackmd --no-color note list
+#+end_src
+
+* Performance Considerations
+
+** Response Time Targets
+
+| Operation          | Target  | Maximum |
+|--------------------+---------+---------|
+| Command startup    | <100ms  | 200ms   |
+| Simple API call    | <500ms  | 1s      |
+| List operation     | <1s     | 2s      |
+| Search operation   | <2s     | 5s      |
+| Batch operation    | varies  | -       |
+
+** Optimization Strategies
+
+1. **Lazy Loading**: Import modules only when needed
+2. **Caching**: Cache API responses with TTL
+3. **Pagination**: Default limits for list operations
+4. **Parallel Requests**: Batch API calls when possible
+5. **Progressive Rendering**: Stream output for large results
+
+** Cache Management
+
+#+begin_src bash
+# Cache location: ~/.cache/hackmd/
+
+# Clear cache
+$ hackmd cache clear
+
+# Disable cache
+$ hackmd --no-cache note list
+
+# Cache TTL configuration
+$ hackmd config set cache.ttl 300  # 5 minutes
+#+end_src
+
+* Security Considerations
+
+** Token Security
+
+- Never log tokens
+- Mask tokens in debug output
+- Use secure storage (keyring)
+- Support token rotation
+- Implement token expiry warnings
+
+** Data Protection
+
+- HTTPS only for API calls
+- Certificate verification
+- No sensitive data in cache
+- Secure file permissions for configs
+- Support for audit logging
+
+** Input Validation
+
+- Sanitize all user input
+- Prevent injection attacks
+- Validate API responses
+- Safe file path handling
+- Size limits for uploads
+
+* Extensibility
+
+** Plugin System
+
+#+begin_src yaml
+# ~/.config/hackmd/plugins.yml
+plugins:
+  - name: hackmd-vim
+    command: hackmd-vim
+    description: Vim integration for HackMD
+
+  - name: hackmd-alfred
+    command: hackmd-alfred
+    description: Alfred workflow for HackMD
+#+end_src
+
+** Hook System
+
+#+begin_src yaml
+# ~/.config/hackmd/hooks.yml
+hooks:
+  pre-create:
+    - command: validate-markdown
+      args: ["${CONTENT_FILE}"]
+
+  post-create:
+    - command: notify
+      args: ["Note created: ${NOTE_ID}"]
+
+  pre-sync:
+    - command: git-commit
+      args: ["-m", "Pre-sync checkpoint"]
+#+end_src
+
+** Custom Commands
+
+#+begin_src bash
+# Register custom command
+$ hackmd extension add my-workflow ./my-script.sh
+
+# Use custom command
+$ hackmd my-workflow
+#+end_src
+
+* Testing Guidelines
+
+** Command Testing Matrix
+
+See TEST-MATRIX.org for comprehensive test coverage.
+
+** Integration Testing
+
+- Mock API responses
+- Test error conditions
+- Verify output formats
+- Check exit codes
+- Validate flag combinations
+
+** Performance Testing
+
+- Measure startup time
+- Profile memory usage
+- Test with large datasets
+- Stress test batch operations
+- Network latency simulation
+
+* Migration Path
+
+** From HackMD Web UI
+
+1. Export notes from web
+2. Import using CLI
+3. Set up sync
+4. Configure permissions
+
+** From Other Tools
+
+- Notion: hackmd import --from notion
+- Obsidian: hackmd import --from obsidian
+- Markdown files: hackmd import *.md
+
+* Best Practices Summary
+
+** Do's
+
+- ✓ Use consistent flag names
+- ✓ Provide helpful error messages
+- ✓ Support both interactive and non-interactive modes
+- ✓ Follow Unix philosophy
+- ✓ Implement comprehensive help
+- ✓ Use standard exit codes
+- ✓ Support JSON output for automation
+- ✓ Provide progress feedback
+- ✓ Cache responses appropriately
+- ✓ Validate input thoroughly
+
+** Don'ts
+
+- ✗ Don't surprise users with destructive operations
+- ✗ Don't require interactive input in scripts
+- ✗ Don't output unnecessary information
+- ✗ Don't ignore platform conventions
+- ✗ Don't store secrets in plain text
+- ✗ Don't make breaking changes without migration path
+- ✗ Don't assume terminal capabilities
+- ✗ Don't mix data and status in stdout
+- ✗ Don't ignore accessibility needs
+- ✗ Don't forget about offline scenarios
+
+* Implementation Priority
+
+** Phase 1: Core (MVP)
+1. Authentication (auth login/logout)
+2. Basic note CRUD (create, read, update, delete)
+3. List notes
+4. Configuration management
+5. JSON output support
+
+** Phase 2: Enhanced
+1. Team operations
+2. Search functionality
+3. Permission management
+4. Template support
+5. Batch operations
+
+** Phase 3: Advanced
+1. Sync operations
+2. Export/Import
+3. Interactive mode
+4. Tab completion
+5. Plugin system
+
+** Phase 4: Polish
+1. Performance optimizations
+2. Advanced caching
+3. Offline support
+4. Migration tools
+5. Extended integrations
+
+* Appendix: Command Quick Reference
+
+#+begin_src text
+Core Commands:
+  hackmd auth login                     # Authenticate
+  hackmd note create -t "Title"         # Create note
+  hackmd note list                      # List notes
+  hackmd note get NOTE_ID               # View note
+  hackmd note update NOTE_ID -c "..."   # Update note
+  hackmd note delete NOTE_ID            # Delete note
+  hackmd note search "query"            # Search notes
+
+Team Commands:
+  hackmd team list                      # List teams
+  hackmd team note create -t TEAM       # Create team note
+  hackmd team note list -t TEAM         # List team notes
+
+Sync Commands:
+  hackmd sync push ./docs               # Push to HackMD
+  hackmd sync pull -F "Docs"            # Pull from HackMD
+  hackmd sync watch ./docs              # Watch and sync
+
+Config Commands:
+  hackmd config get                     # Show config
+  hackmd config set key value           # Set config
+  hackmd config edit                    # Edit config file
+
+Utility Commands:
+  hackmd template list                  # List templates
+  hackmd export NOTE_ID -o file.pdf     # Export note
+  hackmd import file.md                 # Import file
+  hackmd api GET /notes                 # Raw API call
+#+end_src
+
+---
+*End of CLI UX Design Guide*

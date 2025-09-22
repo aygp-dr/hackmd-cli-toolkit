@@ -1,0 +1,1213 @@
+#+TITLE: HackMD API Reference & Integration Guide
+#+AUTHOR: Aidan Pace (aygp-dr)
+#+DATE: 2025-09-21
+#+OPTIONS: toc:3 num:t
+
+* API Overview
+
+The HackMD API provides RESTful endpoints for managing notes, teams, and user data. This document details the API integration patterns, request/response formats, and implementation guidelines for the HackMD CLI toolkit.
+
+* API Endpoints Summary
+
+** Base URL
+#+begin_src text
+https://api.hackmd.io/v1
+#+end_src
+
+** Available Endpoints
+
+| Resource       | Method | Endpoint                                  | Description                 |
+|----------------+--------+-------------------------------------------+-----------------------------|
+| User Profile   | GET    | ~/me~                                     | Get current user info       |
+| User Notes     | GET    | ~/notes~                                  | List user notes             |
+|                | POST   | ~/notes~                                  | Create user note            |
+|                | GET    | ~/notes/{noteId}~                         | Get specific note           |
+|                | PATCH  | ~/notes/{noteId}~                         | Update note                 |
+|                | DELETE | ~/notes/{noteId}~                         | Delete note                 |
+| Teams          | GET    | ~/teams~                                  | List teams                  |
+| Team Notes     | GET    | ~/teams/{teamPath}/notes~                 | List team notes             |
+|                | POST   | ~/teams/{teamPath}/notes~                 | Create team note            |
+|                | GET    | ~/teams/{teamPath}/notes/{noteId}~       | Get team note               |
+|                | PATCH  | ~/teams/{teamPath}/notes/{noteId}~       | Update team note            |
+|                | DELETE | ~/teams/{teamPath}/notes/{noteId}~       | Delete team note            |
+| History        | GET    | ~/history~                                | Get note history            |
+
+* Authentication
+
+** Token-Based Authentication
+
+All API requests require authentication via Bearer token in the Authorization header.
+
+#+begin_src http
+GET /v1/me HTTP/1.1
+Host: api.hackmd.io
+Authorization: Bearer YOUR_API_TOKEN_HERE
+#+end_src
+
+** Token Management
+
+#+begin_src python
+class AuthManager:
+    """Manages API authentication and token storage."""
+
+    def __init__(self):
+        self.keyring_backend = self._init_keyring()
+        self.token_cache = {}
+
+    def get_token(self, profile: str = "default") -> str:
+        """Retrieve token from secure storage."""
+        # Try memory cache first
+        if profile in self.token_cache:
+            return self.token_cache[profile]
+
+        # Try system keyring
+        try:
+            token = keyring.get_password("hackmd-cli", profile)
+            if token:
+                self.token_cache[profile] = token
+                return token
+        except KeyringError:
+            pass
+
+        # Fall back to encrypted file
+        token = self._read_encrypted_token(profile)
+        if token:
+            self.token_cache[profile] = token
+            return token
+
+        raise AuthenticationError(f"No token found for profile: {profile}")
+
+    def save_token(self, token: str, profile: str = "default") -> None:
+        """Save token to secure storage."""
+        # Validate token format
+        if not self._validate_token(token):
+            raise ValueError("Invalid token format")
+
+        # Try system keyring first
+        try:
+            keyring.set_password("hackmd-cli", profile, token)
+            self.token_cache[profile] = token
+            return
+        except KeyringError:
+            pass
+
+        # Fall back to encrypted file
+        self._save_encrypted_token(token, profile)
+        self.token_cache[profile] = token
+
+    def _validate_token(self, token: str) -> bool:
+        """Validate token format."""
+        # Token should be alphanumeric and of expected length
+        return bool(re.match(r'^[a-zA-Z0-9\-_]{20,}$', token))
+#+end_src
+
+* API Client Implementation
+
+** Core HTTP Client
+
+#+begin_src python
+from typing import Optional, Dict, Any, List
+import httpx
+from pydantic import BaseModel, ValidationError
+import backoff
+from datetime import datetime, timedelta
+
+class HackMDAPIClient:
+    """Core API client for HackMD."""
+
+    def __init__(
+        self,
+        token: str,
+        base_url: str = "https://api.hackmd.io/v1",
+        timeout: int = 30,
+        retry_count: int = 3
+    ):
+        self.token = token
+        self.base_url = base_url
+        self.timeout = timeout
+        self.retry_count = retry_count
+        self.session = self._create_session()
+        self.rate_limiter = RateLimiter()
+
+    def _create_session(self) -> httpx.Client:
+        """Create configured HTTP session."""
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "User-Agent": f"hackmd-cli/{__version__}",
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        }
+
+        return httpx.Client(
+            base_url=self.base_url,
+            headers=headers,
+            timeout=httpx.Timeout(self.timeout),
+            follow_redirects=True
+        )
+
+    @backoff.on_exception(
+        backoff.expo,
+        (httpx.NetworkError, httpx.TimeoutException),
+        max_tries=3
+    )
+    async def _make_request(
+        self,
+        method: str,
+        endpoint: str,
+        data: Optional[Dict] = None,
+        params: Optional[Dict] = None
+    ) -> httpx.Response:
+        """Make HTTP request with retry logic."""
+        # Check rate limit
+        await self.rate_limiter.acquire()
+
+        try:
+            response = await self.session.request(
+                method=method,
+                url=endpoint,
+                json=data,
+                params=params
+            )
+
+            # Update rate limit info from headers
+            self._update_rate_limit(response.headers)
+
+            # Handle different status codes
+            if response.status_code == 429:
+                retry_after = int(response.headers.get("Retry-After", 60))
+                raise RateLimitError(f"Rate limited. Retry after {retry_after}s")
+
+            response.raise_for_status()
+            return response
+
+        except httpx.HTTPStatusError as e:
+            raise self._handle_http_error(e)
+
+    def _handle_http_error(self, error: httpx.HTTPStatusError) -> Exception:
+        """Convert HTTP errors to application exceptions."""
+        status = error.response.status_code
+        body = error.response.json() if error.response.content else {}
+
+        error_map = {
+            400: ValidationError,
+            401: AuthenticationError,
+            403: PermissionError,
+            404: NotFoundError,
+            409: ConflictError,
+            500: ServerError,
+            503: ServiceUnavailableError
+        }
+
+        exception_class = error_map.get(status, APIError)
+        return exception_class(
+            f"API Error {status}: {body.get('message', 'Unknown error')}",
+            status_code=status,
+            response_body=body
+        )
+#+end_src
+
+** Rate Limiting
+
+#+begin_src python
+import asyncio
+from collections import deque
+from time import time
+
+class RateLimiter:
+    """Token bucket rate limiter."""
+
+    def __init__(self, rate: int = 60, per: int = 60):
+        """
+        Initialize rate limiter.
+
+        Args:
+            rate: Number of requests allowed
+            per: Time period in seconds
+        """
+        self.rate = rate
+        self.per = per
+        self.allowance = rate
+        self.last_check = time()
+        self.request_times = deque(maxlen=rate)
+
+    async def acquire(self):
+        """Acquire permission to make a request."""
+        current = time()
+        time_passed = current - self.last_check
+        self.last_check = current
+
+        # Refill bucket
+        self.allowance += time_passed * (self.rate / self.per)
+        if self.allowance > self.rate:
+            self.allowance = self.rate
+
+        if self.allowance < 1.0:
+            # Calculate wait time
+            wait_time = (1.0 - self.allowance) * (self.per / self.rate)
+            await asyncio.sleep(wait_time)
+            self.allowance = 0.0
+        else:
+            self.allowance -= 1.0
+
+        self.request_times.append(current)
+
+    def update_from_headers(self, headers: Dict[str, str]):
+        """Update rate limit from API response headers."""
+        if "X-RateLimit-Limit" in headers:
+            self.rate = int(headers["X-RateLimit-Limit"])
+
+        if "X-RateLimit-Remaining" in headers:
+            self.allowance = int(headers["X-RateLimit-Remaining"])
+
+        if "X-RateLimit-Reset" in headers:
+            reset_time = int(headers["X-RateLimit-Reset"])
+            self.per = reset_time - time()
+#+end_src
+
+* Data Models
+
+** Pydantic Models
+
+#+begin_src python
+from pydantic import BaseModel, Field, validator
+from typing import Optional, List, Literal
+from datetime import datetime
+from enum import Enum
+
+class Permission(str, Enum):
+    """Note permission levels."""
+    OWNER = "owner"
+    SIGNED_IN = "signed_in"
+    EVERYONE = "everyone"
+
+class CommentPermission(str, Enum):
+    """Comment permission levels."""
+    DISABLED = "disabled"
+    FORBIDDEN = "forbidden"
+    OWNERS = "owners"
+    SIGNED_IN_USERS = "signed_in_users"
+    EVERYONE = "everyone"
+
+class NotePermissions(BaseModel):
+    """Note permission settings."""
+    read: Permission = Permission.OWNER
+    write: Permission = Permission.OWNER
+    comment: CommentPermission = CommentPermission.SIGNED_IN_USERS
+
+class Note(BaseModel):
+    """Note data model."""
+    id: Optional[str] = None
+    title: str
+    content: Optional[str] = ""
+    tags: List[str] = Field(default_factory=list)
+    publishType: Optional[Literal["view", "slide", "book"]] = None
+    publishLink: Optional[str] = None
+    permalink: Optional[str] = None
+    shortId: Optional[str] = None
+    lastChangedAt: Optional[datetime] = None
+    lastChangeUser: Optional[Dict] = None
+    userPath: Optional[str] = None
+    teamPath: Optional[str] = None
+    readPermission: Permission = Permission.OWNER
+    writePermission: Permission = Permission.OWNER
+    commentPermission: CommentPermission = CommentPermission.SIGNED_IN_USERS
+
+    @validator('title')
+    def validate_title(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Title cannot be empty")
+        if len(v) > 200:
+            raise ValueError("Title too long (max 200 characters)")
+        return v.strip()
+
+    @validator('tags')
+    def validate_tags(cls, v):
+        # Remove duplicates and empty tags
+        return list(set(tag.strip() for tag in v if tag.strip()))
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+class CreateNoteRequest(BaseModel):
+    """Request model for creating a note."""
+    title: str
+    content: str = ""
+    readPermission: Permission = Permission.OWNER
+    writePermission: Permission = Permission.OWNER
+    commentPermission: CommentPermission = CommentPermission.SIGNED_IN_USERS
+
+class UpdateNoteRequest(BaseModel):
+    """Request model for updating a note."""
+    title: Optional[str] = None
+    content: Optional[str] = None
+    readPermission: Optional[Permission] = None
+    writePermission: Optional[Permission] = None
+    commentPermission: Optional[CommentPermission] = None
+
+class Team(BaseModel):
+    """Team data model."""
+    id: str
+    name: str
+    path: str
+    description: Optional[str] = None
+    logo: Optional[str] = None
+    visibility: Literal["public", "private"] = "private"
+    memberCount: int = 0
+
+class User(BaseModel):
+    """User profile model."""
+    id: str
+    email: str
+    name: str
+    userPath: str
+    photo: Optional[str] = None
+    teams: List[Team] = Field(default_factory=list)
+
+class PaginatedResponse(BaseModel):
+    """Paginated API response."""
+    items: List[Any]
+    total: int
+    limit: int
+    offset: int
+    hasMore: bool
+
+    @property
+    def page(self) -> int:
+        return (self.offset // self.limit) + 1
+
+    @property
+    def total_pages(self) -> int:
+        return (self.total + self.limit - 1) // self.limit
+#+end_src
+
+* API Operations
+
+** Note Operations
+
+#+begin_src python
+class NoteOperations:
+    """Note-related API operations."""
+
+    def __init__(self, client: HackMDAPIClient):
+        self.client = client
+
+    async def list_notes(
+        self,
+        limit: int = 20,
+        offset: int = 0,
+        folder: Optional[str] = None,
+        tags: Optional[List[str]] = None
+    ) -> PaginatedResponse:
+        """List user notes with filtering."""
+        params = {
+            "limit": limit,
+            "offset": offset
+        }
+
+        # Add filters if provided
+        if folder:
+            params["folder"] = folder
+        if tags:
+            params["tags"] = ",".join(tags)
+
+        response = await self.client._make_request("GET", "/notes", params=params)
+        data = response.json()
+
+        # Parse response into models
+        notes = [Note(**item) for item in data.get("items", [])]
+
+        return PaginatedResponse(
+            items=notes,
+            total=data.get("total", len(notes)),
+            limit=limit,
+            offset=offset,
+            hasMore=data.get("hasMore", False)
+        )
+
+    async def create_note(self, note: CreateNoteRequest) -> Note:
+        """Create a new note."""
+        response = await self.client._make_request(
+            "POST",
+            "/notes",
+            data=note.dict(exclude_none=True)
+        )
+
+        return Note(**response.json())
+
+    async def get_note(self, note_id: str) -> Note:
+        """Get a specific note."""
+        response = await self.client._make_request("GET", f"/notes/{note_id}")
+        return Note(**response.json())
+
+    async def update_note(
+        self,
+        note_id: str,
+        update: UpdateNoteRequest
+    ) -> Note:
+        """Update an existing note."""
+        response = await self.client._make_request(
+            "PATCH",
+            f"/notes/{note_id}",
+            data=update.dict(exclude_none=True)
+        )
+
+        return Note(**response.json())
+
+    async def delete_note(self, note_id: str) -> bool:
+        """Delete a note."""
+        response = await self.client._make_request("DELETE", f"/notes/{note_id}")
+        return response.status_code == 204
+
+    async def search_notes(
+        self,
+        query: str,
+        limit: int = 20,
+        offset: int = 0,
+        search_in: Literal["all", "title", "content"] = "all"
+    ) -> PaginatedResponse:
+        """Search notes by query."""
+        params = {
+            "q": query,
+            "limit": limit,
+            "offset": offset,
+            "search_in": search_in
+        }
+
+        response = await self.client._make_request("GET", "/notes/search", params=params)
+        data = response.json()
+
+        notes = [Note(**item) for item in data.get("items", [])]
+
+        return PaginatedResponse(
+            items=notes,
+            total=data.get("total", len(notes)),
+            limit=limit,
+            offset=offset,
+            hasMore=data.get("hasMore", False)
+        )
+#+end_src
+
+** Team Operations
+
+#+begin_src python
+class TeamOperations:
+    """Team-related API operations."""
+
+    def __init__(self, client: HackMDAPIClient):
+        self.client = client
+
+    async def list_teams(self) -> List[Team]:
+        """List user's teams."""
+        response = await self.client._make_request("GET", "/teams")
+        data = response.json()
+
+        return [Team(**item) for item in data]
+
+    async def list_team_notes(
+        self,
+        team_path: str,
+        limit: int = 20,
+        offset: int = 0
+    ) -> PaginatedResponse:
+        """List notes in a team."""
+        params = {
+            "limit": limit,
+            "offset": offset
+        }
+
+        response = await self.client._make_request(
+            "GET",
+            f"/teams/{team_path}/notes",
+            params=params
+        )
+        data = response.json()
+
+        notes = [Note(**item) for item in data.get("items", [])]
+
+        return PaginatedResponse(
+            items=notes,
+            total=data.get("total", len(notes)),
+            limit=limit,
+            offset=offset,
+            hasMore=data.get("hasMore", False)
+        )
+
+    async def create_team_note(
+        self,
+        team_path: str,
+        note: CreateNoteRequest
+    ) -> Note:
+        """Create a note in a team."""
+        response = await self.client._make_request(
+            "POST",
+            f"/teams/{team_path}/notes",
+            data=note.dict(exclude_none=True)
+        )
+
+        return Note(**response.json())
+
+    async def get_team_note(self, team_path: str, note_id: str) -> Note:
+        """Get a team note."""
+        response = await self.client._make_request(
+            "GET",
+            f"/teams/{team_path}/notes/{note_id}"
+        )
+
+        return Note(**response.json())
+
+    async def update_team_note(
+        self,
+        team_path: str,
+        note_id: str,
+        update: UpdateNoteRequest
+    ) -> Note:
+        """Update a team note."""
+        response = await self.client._make_request(
+            "PATCH",
+            f"/teams/{team_path}/notes/{note_id}",
+            data=update.dict(exclude_none=True)
+        )
+
+        return Note(**response.json())
+
+    async def delete_team_note(self, team_path: str, note_id: str) -> bool:
+        """Delete a team note."""
+        response = await self.client._make_request(
+            "DELETE",
+            f"/teams/{team_path}/notes/{note_id}"
+        )
+
+        return response.status_code == 204
+#+end_src
+
+** User Operations
+
+#+begin_src python
+class UserOperations:
+    """User-related API operations."""
+
+    def __init__(self, client: HackMDAPIClient):
+        self.client = client
+
+    async def get_profile(self) -> User:
+        """Get current user profile."""
+        response = await self.client._make_request("GET", "/me")
+        return User(**response.json())
+
+    async def get_history(self, limit: int = 20) -> List[Dict]:
+        """Get user's note history."""
+        params = {"limit": limit}
+        response = await self.client._make_request("GET", "/history", params=params)
+
+        return response.json()
+#+end_src
+
+* Error Handling
+
+** Exception Hierarchy
+
+#+begin_src python
+class HackMDError(Exception):
+    """Base exception for HackMD CLI."""
+    def __init__(self, message: str, **kwargs):
+        super().__init__(message)
+        self.message = message
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+class APIError(HackMDError):
+    """API-related errors."""
+    def __init__(self, message: str, status_code: int = None, response_body: Dict = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.response_body = response_body or {}
+
+class AuthenticationError(APIError):
+    """Authentication failed."""
+    pass
+
+class PermissionError(APIError):
+    """Insufficient permissions."""
+    pass
+
+class NotFoundError(APIError):
+    """Resource not found."""
+    pass
+
+class ValidationError(APIError):
+    """Request validation failed."""
+    pass
+
+class RateLimitError(APIError):
+    """Rate limit exceeded."""
+    def __init__(self, message: str, retry_after: int = None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+class NetworkError(HackMDError):
+    """Network-related errors."""
+    pass
+
+class ConfigurationError(HackMDError):
+    """Configuration errors."""
+    pass
+#+end_src
+
+** Error Response Handling
+
+#+begin_src python
+def handle_api_error(error: APIError) -> str:
+    """Convert API errors to user-friendly messages."""
+    error_messages = {
+        401: "Authentication failed. Please check your API token.",
+        403: "Permission denied. You don't have access to this resource.",
+        404: "Resource not found. Please verify the ID or path.",
+        409: "Conflict detected. The resource may have been modified.",
+        429: f"Rate limit exceeded. Please wait {error.retry_after}s.",
+        500: "Server error. Please try again later.",
+        503: "Service unavailable. HackMD may be under maintenance."
+    }
+
+    base_message = error_messages.get(error.status_code, "An error occurred")
+
+    # Add specific error details if available
+    if error.response_body.get("errors"):
+        details = "\n".join(f"  - {e}" for e in error.response_body["errors"])
+        return f"{base_message}\n\nDetails:\n{details}"
+
+    return base_message
+#+end_src
+
+* Caching Strategy
+
+** Response Caching
+
+#+begin_src python
+import hashlib
+import pickle
+from pathlib import Path
+from datetime import datetime, timedelta
+
+class CacheManager:
+    """Manages API response caching."""
+
+    def __init__(self, cache_dir: Path, default_ttl: int = 300):
+        """
+        Initialize cache manager.
+
+        Args:
+            cache_dir: Directory for cache storage
+            default_ttl: Default TTL in seconds
+        """
+        self.cache_dir = cache_dir
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.default_ttl = default_ttl
+
+    def _get_cache_key(self, method: str, url: str, params: Dict = None) -> str:
+        """Generate cache key from request parameters."""
+        key_data = f"{method}:{url}:{sorted(params.items()) if params else ''}"
+        return hashlib.sha256(key_data.encode()).hexdigest()
+
+    def get(self, method: str, url: str, params: Dict = None) -> Optional[Any]:
+        """Retrieve cached response."""
+        key = self._get_cache_key(method, url, params)
+        cache_file = self.cache_dir / f"{key}.cache"
+
+        if not cache_file.exists():
+            return None
+
+        try:
+            with open(cache_file, "rb") as f:
+                cached = pickle.load(f)
+
+            # Check expiration
+            if datetime.now() > cached["expires"]:
+                cache_file.unlink()
+                return None
+
+            return cached["data"]
+
+        except Exception:
+            # Invalid cache file
+            cache_file.unlink(missing_ok=True)
+            return None
+
+    def set(
+        self,
+        method: str,
+        url: str,
+        data: Any,
+        params: Dict = None,
+        ttl: Optional[int] = None
+    ):
+        """Store response in cache."""
+        key = self._get_cache_key(method, url, params)
+        cache_file = self.cache_dir / f"{key}.cache"
+
+        ttl = ttl or self.default_ttl
+        expires = datetime.now() + timedelta(seconds=ttl)
+
+        cached = {
+            "data": data,
+            "expires": expires,
+            "created": datetime.now()
+        }
+
+        with open(cache_file, "wb") as f:
+            pickle.dump(cached, f)
+
+    def clear(self, expired_only: bool = False):
+        """Clear cache."""
+        for cache_file in self.cache_dir.glob("*.cache"):
+            if expired_only:
+                try:
+                    with open(cache_file, "rb") as f:
+                        cached = pickle.load(f)
+                    if datetime.now() <= cached["expires"]:
+                        continue
+                except Exception:
+                    pass
+
+            cache_file.unlink()
+
+    def get_stats(self) -> Dict:
+        """Get cache statistics."""
+        total_files = 0
+        total_size = 0
+        expired = 0
+        now = datetime.now()
+
+        for cache_file in self.cache_dir.glob("*.cache"):
+            total_files += 1
+            total_size += cache_file.stat().st_size
+
+            try:
+                with open(cache_file, "rb") as f:
+                    cached = pickle.load(f)
+                if now > cached["expires"]:
+                    expired += 1
+            except Exception:
+                expired += 1
+
+        return {
+            "total_entries": total_files,
+            "total_size_mb": total_size / (1024 * 1024),
+            "expired_entries": expired,
+            "cache_directory": str(self.cache_dir)
+        }
+#+end_src
+
+* Pagination Support
+
+** Auto-Pagination
+
+#+begin_src python
+class Paginator:
+    """Handles API pagination."""
+
+    def __init__(self, client: HackMDAPIClient):
+        self.client = client
+
+    async def paginate(
+        self,
+        endpoint: str,
+        params: Dict = None,
+        max_items: Optional[int] = None
+    ) -> AsyncGenerator[Any, None]:
+        """
+        Automatically paginate through API results.
+
+        Args:
+            endpoint: API endpoint
+            params: Query parameters
+            max_items: Maximum items to retrieve
+
+        Yields:
+            Individual items from paginated responses
+        """
+        params = params or {}
+        offset = params.get("offset", 0)
+        limit = params.get("limit", 20)
+        items_yielded = 0
+
+        while True:
+            params["offset"] = offset
+            params["limit"] = limit
+
+            response = await self.client._make_request("GET", endpoint, params=params)
+            data = response.json()
+
+            items = data.get("items", [])
+            if not items:
+                break
+
+            for item in items:
+                yield item
+                items_yielded += 1
+
+                if max_items and items_yielded >= max_items:
+                    return
+
+            # Check if more pages exist
+            if not data.get("hasMore", False):
+                break
+
+            offset += limit
+
+    async def collect_all(
+        self,
+        endpoint: str,
+        params: Dict = None,
+        max_items: Optional[int] = None
+    ) -> List[Any]:
+        """Collect all paginated items into a list."""
+        items = []
+        async for item in self.paginate(endpoint, params, max_items):
+            items.append(item)
+        return items
+#+end_src
+
+* Batch Operations
+
+** Batch Processing
+
+#+begin_src python
+import asyncio
+from typing import List, Callable, Any
+
+class BatchProcessor:
+    """Handles batch API operations."""
+
+    def __init__(self, client: HackMDAPIClient, concurrency: int = 5):
+        self.client = client
+        self.concurrency = concurrency
+
+    async def process_batch(
+        self,
+        items: List[Any],
+        operation: Callable,
+        progress_callback: Optional[Callable] = None
+    ) -> List[Dict]:
+        """
+        Process items in batch with concurrency control.
+
+        Args:
+            items: Items to process
+            operation: Async function to apply to each item
+            progress_callback: Optional progress callback
+
+        Returns:
+            List of results with success/error status
+        """
+        semaphore = asyncio.Semaphore(self.concurrency)
+        results = []
+
+        async def process_item(index: int, item: Any) -> Dict:
+            async with semaphore:
+                try:
+                    result = await operation(item)
+                    status = {"index": index, "item": item, "success": True, "result": result}
+                except Exception as e:
+                    status = {"index": index, "item": item, "success": False, "error": str(e)}
+
+                if progress_callback:
+                    progress_callback(index + 1, len(items), status)
+
+                return status
+
+        # Create tasks for all items
+        tasks = [process_item(i, item) for i, item in enumerate(items)]
+
+        # Execute with gather
+        results = await asyncio.gather(*tasks, return_exceptions=False)
+
+        return results
+
+    async def batch_create_notes(
+        self,
+        notes: List[CreateNoteRequest],
+        progress_callback: Optional[Callable] = None
+    ) -> List[Dict]:
+        """Batch create multiple notes."""
+        async def create_note(note: CreateNoteRequest):
+            return await self.client.note_operations.create_note(note)
+
+        return await self.process_batch(notes, create_note, progress_callback)
+
+    async def batch_delete_notes(
+        self,
+        note_ids: List[str],
+        progress_callback: Optional[Callable] = None
+    ) -> List[Dict]:
+        """Batch delete multiple notes."""
+        async def delete_note(note_id: str):
+            return await self.client.note_operations.delete_note(note_id)
+
+        return await self.process_batch(note_ids, delete_note, progress_callback)
+#+end_src
+
+* Webhook Support
+
+** Webhook Handler
+
+#+begin_src python
+import hmac
+import hashlib
+from typing import Dict, Callable
+
+class WebhookHandler:
+    """Handles HackMD webhooks."""
+
+    def __init__(self, secret: str):
+        self.secret = secret.encode()
+        self.handlers: Dict[str, Callable] = {}
+
+    def verify_signature(self, payload: bytes, signature: str) -> bool:
+        """Verify webhook signature."""
+        expected = hmac.new(
+            self.secret,
+            payload,
+            hashlib.sha256
+        ).hexdigest()
+
+        return hmac.compare_digest(expected, signature)
+
+    def register_handler(self, event: str, handler: Callable):
+        """Register event handler."""
+        self.handlers[event] = handler
+
+    async def handle_webhook(self, headers: Dict, payload: bytes) -> Dict:
+        """Process incoming webhook."""
+        # Verify signature
+        signature = headers.get("X-HackMD-Signature", "")
+        if not self.verify_signature(payload, signature):
+            raise SecurityError("Invalid webhook signature")
+
+        # Parse payload
+        data = json.loads(payload)
+        event = data.get("event")
+
+        # Call handler
+        handler = self.handlers.get(event)
+        if handler:
+            return await handler(data)
+
+        return {"status": "unhandled", "event": event}
+#+end_src
+
+* API Testing
+
+** Mock API Client
+
+#+begin_src python
+class MockAPIClient(HackMDAPIClient):
+    """Mock API client for testing."""
+
+    def __init__(self):
+        self.responses = {}
+        self.requests = []
+
+    def set_response(self, method: str, endpoint: str, response: Any):
+        """Set mock response for endpoint."""
+        key = f"{method}:{endpoint}"
+        self.responses[key] = response
+
+    async def _make_request(
+        self,
+        method: str,
+        endpoint: str,
+        data: Optional[Dict] = None,
+        params: Optional[Dict] = None
+    ) -> Any:
+        """Mock request handler."""
+        # Record request
+        self.requests.append({
+            "method": method,
+            "endpoint": endpoint,
+            "data": data,
+            "params": params
+        })
+
+        # Return mock response
+        key = f"{method}:{endpoint}"
+        if key in self.responses:
+            response = self.responses[key]
+
+            # Handle exceptions
+            if isinstance(response, Exception):
+                raise response
+
+            # Create mock response object
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = response
+            return mock_response
+
+        # Default 404
+        raise NotFoundError(f"No mock for {key}")
+
+    def assert_called_with(self, method: str, endpoint: str, **kwargs):
+        """Assert API was called with specific parameters."""
+        for request in self.requests:
+            if request["method"] == method and request["endpoint"] == endpoint:
+                for key, value in kwargs.items():
+                    assert request.get(key) == value
+                return
+
+        raise AssertionError(f"No call found for {method} {endpoint}")
+#+end_src
+
+* Performance Optimizations
+
+** Connection Pooling
+
+#+begin_src python
+class ConnectionPool:
+    """Manages HTTP connection pooling."""
+
+    def __init__(self, max_connections: int = 10):
+        self.limits = httpx.Limits(
+            max_keepalive_connections=max_connections,
+            max_connections=max_connections * 2
+        )
+        self.transport = httpx.AsyncHTTPTransport(
+            limits=self.limits,
+            retries=3
+        )
+
+    def create_client(self, **kwargs) -> httpx.AsyncClient:
+        """Create client with pooled connections."""
+        return httpx.AsyncClient(
+            transport=self.transport,
+            **kwargs
+        )
+#+end_src
+
+** Request Deduplication
+
+#+begin_src python
+class RequestDeduplicator:
+    """Prevents duplicate concurrent requests."""
+
+    def __init__(self):
+        self.pending: Dict[str, asyncio.Future] = {}
+
+    async def deduplicate(
+        self,
+        key: str,
+        operation: Callable
+    ) -> Any:
+        """Execute operation with deduplication."""
+        if key in self.pending:
+            # Wait for pending operation
+            return await self.pending[key]
+
+        # Create future for this operation
+        future = asyncio.create_future()
+        self.pending[key] = future
+
+        try:
+            result = await operation()
+            future.set_result(result)
+            return result
+        except Exception as e:
+            future.set_exception(e)
+            raise
+        finally:
+            del self.pending[key]
+#+end_src
+
+* API Versioning
+
+** Version Negotiation
+
+#+begin_src python
+class APIVersionManager:
+    """Manages API version compatibility."""
+
+    SUPPORTED_VERSIONS = ["v1", "v2"]
+    DEFAULT_VERSION = "v1"
+
+    def __init__(self, preferred_version: str = None):
+        self.preferred_version = preferred_version or self.DEFAULT_VERSION
+
+    def get_base_url(self, version: str = None) -> str:
+        """Get base URL for API version."""
+        version = version or self.preferred_version
+
+        if version not in self.SUPPORTED_VERSIONS:
+            raise ValueError(f"Unsupported API version: {version}")
+
+        return f"https://api.hackmd.io/{version}"
+
+    def negotiate_version(self, server_versions: List[str]) -> str:
+        """Negotiate best API version with server."""
+        # Find best match
+        for version in reversed(self.SUPPORTED_VERSIONS):
+            if version in server_versions:
+                return version
+
+        raise ValueError("No compatible API version found")
+#+end_src
+
+* API Usage Examples
+
+** Complete Example
+
+#+begin_src python
+import asyncio
+from hackmd.api import HackMDAPIClient
+from hackmd.api.models import CreateNoteRequest, Permission
+
+async def main():
+    """Example API usage."""
+    # Initialize client
+    client = HackMDAPIClient(token="your_token_here")
+
+    try:
+        # Get user profile
+        user = await client.user_operations.get_profile()
+        print(f"Logged in as: {user.name}")
+
+        # Create a note
+        note_request = CreateNoteRequest(
+            title="API Test Note",
+            content="# Hello from API\n\nThis is a test.",
+            readPermission=Permission.EVERYONE,
+            writePermission=Permission.OWNER
+        )
+
+        note = await client.note_operations.create_note(note_request)
+        print(f"Created note: {note.id}")
+
+        # List notes with pagination
+        paginator = Paginator(client)
+        async for note in paginator.paginate("/notes", max_items=50):
+            print(f"  - {note['title']}")
+
+        # Batch operations
+        processor = BatchProcessor(client)
+        notes_to_create = [
+            CreateNoteRequest(title=f"Batch Note {i}")
+            for i in range(10)
+        ]
+
+        results = await processor.batch_create_notes(
+            notes_to_create,
+            progress_callback=lambda i, t, s: print(f"Progress: {i}/{t}")
+        )
+
+        successful = sum(1 for r in results if r["success"])
+        print(f"Created {successful}/{len(results)} notes")
+
+    finally:
+        await client.close()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+#+end_src
+
+---
+*End of API Reference Document*

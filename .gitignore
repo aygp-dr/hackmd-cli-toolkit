@@ -1,0 +1,98 @@
+# Generated files
+README.md
+
+# Environment variables
+.env
+.env.*
+*.env
+
+# API keys and secrets
+*_token*
+*_key*
+*_secret*
+.secrets/
+secrets/
+
+# Config with potential tokens
+.hackmd/
+config.json
+**/config.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# UV
+.venv/
+uv.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# Documentation build
+docs/_build/
+docs/.doctrees/
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# Local development
+local/
+tmp/
+temp/
+scratch/
+
+# Logs
+*.log
+logs/
+
+# Cache
+.cache/
+*.cache
+
+# Backup files
+*.bak
+*.backup
+*_backup*
+backup/
+backups/

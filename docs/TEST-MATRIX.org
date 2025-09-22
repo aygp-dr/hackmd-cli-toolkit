@@ -1,0 +1,646 @@
+#+TITLE: HackMD CLI Test Matrix
+#+AUTHOR: Aidan Pace (aygp-dr)
+#+DATE: 2025-09-21
+#+OPTIONS: toc:3 num:t
+
+* Overview
+
+This document provides a comprehensive test matrix for the HackMD CLI toolkit, covering all command combinations, flag permutations, edge cases, and integration scenarios.
+
+* Test Coverage Strategy
+
+** Testing Levels
+
+1. **Unit Tests**: Individual function and module testing
+2. **Integration Tests**: API client and command handler testing
+3. **End-to-End Tests**: Full command execution with mocked API
+4. **System Tests**: Real API interaction (limited, requires credentials)
+5. **Performance Tests**: Load and stress testing
+6. **Security Tests**: Input validation and token handling
+
+** Test Categories
+
+- Functional Tests (80% coverage target)
+- Error Handling Tests (100% coverage target)
+- Edge Case Tests
+- Performance Tests
+- Security Tests
+- Compatibility Tests
+
+* Authentication Tests
+
+** auth login
+
+| Test Case                        | Command                                    | Expected Result                      | Priority |
+|----------------------------------+--------------------------------------------+--------------------------------------+----------|
+| Interactive login                | ~hackmd auth login~                        | Prompts for token, saves securely   | HIGH     |
+| Non-interactive login            | ~hackmd auth login --token TOKEN~         | Saves token without prompt          | HIGH     |
+| Login with profile               | ~hackmd auth login --profile work~        | Saves to named profile              | MEDIUM   |
+| Login without keyring            | ~hackmd auth login --no-keyring~          | Saves to encrypted file             | MEDIUM   |
+| Invalid token                    | ~hackmd auth login --token invalid~       | Error: Authentication failed        | HIGH     |
+| Empty token                      | ~hackmd auth login --token ""~            | Error: Token required               | HIGH     |
+| Malformed token                  | ~hackmd auth login --token 123~           | Error: Invalid token format         | MEDIUM   |
+| Overwrite existing auth          | ~hackmd auth login~ (when logged in)      | Prompts for confirmation            | MEDIUM   |
+| Network error during login       | ~hackmd auth login~ (offline)             | Error: Network error                | HIGH     |
+| Rate limit during login          | ~hackmd auth login~ (rate limited)        | Error: Rate limit exceeded          | LOW      |
+
+** auth logout
+
+| Test Case                  | Command                              | Expected Result                | Priority |
+|----------------------------+--------------------------------------+--------------------------------+----------|
+| Logout current profile     | ~hackmd auth logout~                 | Removes current auth           | HIGH     |
+| Logout specific profile    | ~hackmd auth logout --profile work~ | Removes named profile          | MEDIUM   |
+| Logout all profiles        | ~hackmd auth logout --all~           | Removes all profiles           | MEDIUM   |
+| Logout when not logged in  | ~hackmd auth logout~                 | Warning: Not authenticated     | LOW      |
+| Force logout               | ~hackmd auth logout --force~        | No confirmation prompt         | LOW      |
+
+** auth status
+
+| Test Case               | Command                | Expected Result                      | Priority |
+|-------------------------+------------------------+--------------------------------------+----------|
+| Status when logged in   | ~hackmd auth status~   | Shows user info and token status    | HIGH     |
+| Status when logged out  | ~hackmd auth status~   | Shows "Not authenticated"           | HIGH     |
+| Status with profile     | ~hackmd auth status~   | Shows active profile name           | MEDIUM   |
+| Status with JSON output | ~hackmd auth status --json~ | Returns JSON with auth info   | LOW      |
+
+* Note Management Tests
+
+** note create
+
+| Test Case                      | Command                                               | Expected Result                    | Priority |
+|--------------------------------+-------------------------------------------------------+------------------------------------+----------|
+| Basic create                   | ~hackmd note create -t "Title" -c "Content"~         | Creates note, returns ID           | HIGH     |
+| Create from file               | ~hackmd note create -t "Title" -f file.md~           | Creates note from file             | HIGH     |
+| Create with template           | ~hackmd note create --template meeting~              | Creates from template              | MEDIUM   |
+| Create in folder               | ~hackmd note create -t "Title" -F Work~              | Creates in specified folder        | HIGH     |
+| Create with tags               | ~hackmd note create -t "Title" -g "tag1,tag2"~       | Creates with tags                  | MEDIUM   |
+| Create with permissions        | ~hackmd note create -t "Title" --read everyone~      | Sets permissions                   | MEDIUM   |
+| Missing title                  | ~hackmd note create -c "Content"~                    | Prompts for title (interactive)    | HIGH     |
+| Missing content                | ~hackmd note create -t "Title"~                      | Creates with empty content         | MEDIUM   |
+| Invalid file path              | ~hackmd note create -f /invalid/path~                | Error: File not found              | HIGH     |
+| Large file (>10MB)             | ~hackmd note create -f large.md~                     | Error: File too large              | MEDIUM   |
+| Binary file                    | ~hackmd note create -f image.jpg~                    | Error: Binary file not supported   | LOW      |
+| Invalid permission             | ~hackmd note create --read invalid~                  | Error: Invalid permission          | MEDIUM   |
+| Network error                  | ~hackmd note create~ (offline)                       | Error: Network error               | HIGH     |
+| Rate limit                     | ~hackmd note create~ (rate limited)                  | Error: Rate limit exceeded         | LOW      |
+| Special characters in title    | ~hackmd note create -t "Title/\\<>:\"|?*"~          | Handles special chars              | MEDIUM   |
+| Unicode in content             | ~hackmd note create -c "你好 🌍"~                    | Handles Unicode properly           | MEDIUM   |
+| Empty title                    | ~hackmd note create -t "" -c "Content"~              | Error: Title cannot be empty       | MEDIUM   |
+| Duplicate title handling       | ~hackmd note create -t "Existing Title"~             | Creates with same title (allowed)  | LOW      |
+
+** note list
+
+| Test Case                    | Command                                        | Expected Result                      | Priority |
+|------------------------------+------------------------------------------------+--------------------------------------+----------|
+| List all notes               | ~hackmd note list~                             | Shows all notes (paginated)          | HIGH     |
+| List with limit              | ~hackmd note list --limit 5~                   | Shows 5 notes                        | HIGH     |
+| List by folder               | ~hackmd note list -F Work~                     | Shows notes in folder                | HIGH     |
+| List by tag                  | ~hackmd note list -g urgent~                   | Shows notes with tag                 | MEDIUM   |
+| List with sorting            | ~hackmd note list --sort updated~              | Sorts by update time                 | MEDIUM   |
+| Reverse sort                 | ~hackmd note list --sort title --reverse~      | Reverse alphabetical                 | LOW      |
+| JSON output                  | ~hackmd note list --json~                      | Returns JSON array                   | HIGH     |
+| CSV output                   | ~hackmd note list --output csv~                | Returns CSV format                   | MEDIUM   |
+| Empty list                   | ~hackmd note list~ (no notes)                  | Shows "No notes found"               | MEDIUM   |
+| Invalid folder               | ~hackmd note list -F /invalid~                 | Shows empty list                     | LOW      |
+| Multiple tags                | ~hackmd note list -g "tag1,tag2"~              | Shows notes with any tag             | MEDIUM   |
+| Pagination test              | ~hackmd note list --limit 10 --offset 20~     | Shows page 3 of results              | MEDIUM   |
+| Network error                | ~hackmd note list~ (offline)                   | Error: Network error                 | HIGH     |
+
+** note get/show
+
+| Test Case                  | Command                              | Expected Result                    | Priority |
+|----------------------------+--------------------------------------+------------------------------------+----------|
+| Get existing note          | ~hackmd note get abc123~             | Shows note content                 | HIGH     |
+| Get with metadata          | ~hackmd note show abc123~            | Shows metadata and content         | MEDIUM   |
+| Get non-existent note      | ~hackmd note get invalid~           | Error: Note not found              | HIGH     |
+| Get with output file       | ~hackmd note get abc123 -o note.md~ | Saves to file                      | MEDIUM   |
+| Get as HTML                | ~hackmd note get abc123 --format html~ | Returns HTML                    | LOW      |
+| Get without permission     | ~hackmd note get private123~        | Error: Permission denied           | HIGH     |
+| Network error              | ~hackmd note get abc123~ (offline)  | Error: Network error               | HIGH     |
+
+** note update
+
+| Test Case                    | Command                                          | Expected Result                   | Priority |
+|------------------------------+--------------------------------------------------+-----------------------------------+----------|
+| Update title                 | ~hackmd note update abc123 -t "New Title"~       | Updates title                     | HIGH     |
+| Update content               | ~hackmd note update abc123 -c "New content"~     | Replaces content                  | HIGH     |
+| Update from file             | ~hackmd note update abc123 -f updated.md~        | Updates from file                 | HIGH     |
+| Append content               | ~hackmd note update abc123 -a "More content"~    | Appends to existing               | MEDIUM   |
+| Add tags                     | ~hackmd note update abc123 --tag-add "new"~      | Adds tags                         | MEDIUM   |
+| Remove tags                  | ~hackmd note update abc123 --tag-remove "old"~   | Removes tags                      | MEDIUM   |
+| Update permissions           | ~hackmd note update abc123 --read everyone~      | Changes permissions               | MEDIUM   |
+| Update non-existent          | ~hackmd note update invalid -t "Title"~          | Error: Note not found             | HIGH     |
+| Update without permission    | ~hackmd note update locked -t "Title"~           | Error: Permission denied          | HIGH     |
+| Empty update                 | ~hackmd note update abc123~                      | No-op, success                    | LOW      |
+| Concurrent updates           | Two simultaneous updates                         | Last write wins or conflict       | MEDIUM   |
+| Large content update         | ~hackmd note update abc123 -f large.md~          | Handles large content             | MEDIUM   |
+
+** note delete
+
+| Test Case                   | Command                                    | Expected Result                     | Priority |
+|-----------------------------+--------------------------------------------+-------------------------------------+----------|
+| Delete existing note        | ~hackmd note delete abc123~                | Prompts confirmation, deletes       | HIGH     |
+| Force delete                | ~hackmd note delete abc123 --force~        | Deletes without confirmation        | HIGH     |
+| Delete non-existent         | ~hackmd note delete invalid~               | Error: Note not found               | HIGH     |
+| Batch delete                | ~hackmd note delete --batch ids.txt~       | Deletes multiple notes              | MEDIUM   |
+| Delete without permission   | ~hackmd note delete locked~                | Error: Permission denied            | HIGH     |
+| Delete with network error   | ~hackmd note delete abc123~ (offline)      | Error: Network error                | HIGH     |
+| Cancel delete confirmation  | ~hackmd note delete abc123~ (answer no)    | Cancels operation                   | MEDIUM   |
+
+** note search
+
+| Test Case                  | Command                                      | Expected Result                      | Priority |
+|----------------------------+----------------------------------------------+--------------------------------------+----------|
+| Basic search               | ~hackmd note search "query"~                 | Returns matching notes               | HIGH     |
+| Search with limit          | ~hackmd note search "query" --limit 10~      | Returns max 10 results               | MEDIUM   |
+| Search in folder           | ~hackmd note search "query" -F Work~         | Searches only in folder              | MEDIUM   |
+| Search by tag              | ~hackmd note search "query" -g urgent~       | Searches notes with tag              | MEDIUM   |
+| Title-only search          | ~hackmd note search "query" --title-only~    | Searches only titles                 | MEDIUM   |
+| Content-only search        | ~hackmd note search "query" --content-only~  | Searches only content                | MEDIUM   |
+| Empty query                | ~hackmd note search ""~                      | Error: Query required                | MEDIUM   |
+| Special characters         | ~hackmd note search "test*.$^"~              | Handles special chars                | LOW      |
+| No results                 | ~hackmd note search "xyz123unique"~          | Shows "No results found"             | MEDIUM   |
+| Case sensitivity           | ~hackmd note search "Query" vs "query"~      | Case-insensitive by default          | LOW      |
+
+* Team Operations Tests
+
+** team list
+
+| Test Case              | Command                         | Expected Result                | Priority |
+|------------------------+---------------------------------+--------------------------------+----------|
+| List all teams         | ~hackmd team list~              | Shows all teams                | HIGH     |
+| List by role           | ~hackmd team list --role admin~ | Shows teams where admin        | MEDIUM   |
+| No teams               | ~hackmd team list~ (no teams)   | Shows "No teams found"         | MEDIUM   |
+| JSON output            | ~hackmd team list --json~       | Returns JSON array             | MEDIUM   |
+
+** team note operations
+
+| Test Case                      | Command                                              | Expected Result                   | Priority |
+|--------------------------------+------------------------------------------------------+-----------------------------------+----------|
+| Create team note               | ~hackmd team note create -t eng --title "Doc"~      | Creates in team space             | HIGH     |
+| List team notes                | ~hackmd team note list -t eng~                      | Shows team notes                  | HIGH     |
+| Update team note               | ~hackmd team note update -t eng abc123 -c "New"~    | Updates team note                 | HIGH     |
+| Delete team note               | ~hackmd team note delete -t eng abc123~             | Deletes team note                 | HIGH     |
+| Invalid team                   | ~hackmd team note list -t invalid~                  | Error: Team not found             | HIGH     |
+| No permission for team         | ~hackmd team note create -t restricted~             | Error: Permission denied          | HIGH     |
+| Cross-team operations          | Access note from different team                     | Error: Permission denied          | MEDIUM   |
+
+* Sync Operations Tests
+
+** sync push
+
+| Test Case                    | Command                                         | Expected Result                     | Priority |
+|------------------------------+-------------------------------------------------+-------------------------------------+----------|
+| Push directory               | ~hackmd sync push ./docs -F Docs~              | Uploads all files                   | HIGH     |
+| Push with watch              | ~hackmd sync push ./docs --watch~              | Monitors changes                    | MEDIUM   |
+| Push with exclude            | ~hackmd sync push . --exclude "*.tmp"~         | Skips tmp files                     | MEDIUM   |
+| Dry run                      | ~hackmd sync push ./docs --dry-run~            | Shows changes without push          | MEDIUM   |
+| Push non-existent dir        | ~hackmd sync push /invalid~                    | Error: Directory not found          | HIGH     |
+| Push empty directory         | ~hackmd sync push ./empty~                     | No files to sync                    | LOW      |
+| Conflict handling            | Push when remote is newer                      | Prompts for resolution              | HIGH     |
+| Large file handling          | Push file >10MB                                | Error or warning                    | MEDIUM   |
+| Binary file handling         | Push .jpg, .pdf files                          | Skips or warns                      | LOW      |
+
+** sync pull
+
+| Test Case                  | Command                                      | Expected Result                       | Priority |
+|----------------------------+----------------------------------------------+---------------------------------------+----------|
+| Pull folder                | ~hackmd sync pull -F Docs -o ./local~       | Downloads all notes                   | HIGH     |
+| Pull with format           | ~hackmd sync pull -F Docs --format html~    | Downloads as HTML                     | MEDIUM   |
+| Preserve structure         | ~hackmd sync pull --preserve-structure~     | Maintains folder hierarchy            | MEDIUM   |
+| Pull non-existent folder   | ~hackmd sync pull -F Invalid~               | Error: Folder not found               | HIGH     |
+| Pull to existing files     | Pull when local files exist                 | Prompts for overwrite                 | MEDIUM   |
+| Network interruption       | Network fails mid-pull                      | Resumes or fails gracefully           | MEDIUM   |
+
+* Configuration Tests
+
+** config operations
+
+| Test Case                   | Command                                    | Expected Result                      | Priority |
+|-----------------------------+--------------------------------------------+--------------------------------------+----------|
+| Get all config              | ~hackmd config get~                        | Shows all configuration              | HIGH     |
+| Get specific key            | ~hackmd config get api.token~              | Shows token (masked)                 | HIGH     |
+| Set config value            | ~hackmd config set defaults.team eng~      | Updates configuration                | HIGH     |
+| Set invalid key             | ~hackmd config set invalid.key value~      | Error: Invalid configuration key     | MEDIUM   |
+| Reset config                | ~hackmd config reset~                      | Resets to defaults                   | MEDIUM   |
+| Reset specific key          | ~hackmd config reset api.timeout~          | Resets single value                  | LOW      |
+| Edit config                 | ~hackmd config edit~                       | Opens in editor                      | MEDIUM   |
+| Invalid config file         | Malformed YAML in config                   | Error: Invalid configuration         | HIGH     |
+| Permission denied           | Config file not writable                   | Error: Permission denied             | MEDIUM   |
+
+* Output Format Tests
+
+** Format Testing Matrix
+
+| Command                      | Format  | Expected Output Structure           | Priority |
+|------------------------------+---------+-------------------------------------+----------|
+| ~hackmd note list~           | table   | ASCII table with borders            | HIGH     |
+| ~hackmd note list --json~    | json    | Valid JSON array                    | HIGH     |
+| ~hackmd note list -o yaml~   | yaml    | Valid YAML document                 | MEDIUM   |
+| ~hackmd note list -o csv~    | csv     | CSV with headers                    | MEDIUM   |
+| ~hackmd note list -o tsv~    | tsv     | Tab-separated values                | LOW      |
+| ~hackmd note list -o id~     | id      | One ID per line                     | MEDIUM   |
+| ~hackmd note list -o raw~    | raw     | Unformatted text                    | LOW      |
+
+** Output Validation Tests
+
+| Test Case                  | Command                                  | Validation                           | Priority |
+|----------------------------+------------------------------------------+--------------------------------------+----------|
+| Valid JSON                 | ~hackmd note list --json \| jq .~        | jq parses successfully               | HIGH     |
+| Valid YAML                 | ~hackmd note list -o yaml \| yq .~       | yq parses successfully               | MEDIUM   |
+| Valid CSV                  | ~hackmd note list -o csv \| csvtool~     | CSV tools parse successfully         | MEDIUM   |
+| UTF-8 handling             | Output with Unicode characters           | Proper encoding                      | HIGH     |
+| Large output               | List 1000+ items                         | Handles without truncation           | MEDIUM   |
+| Empty output               | List when no results                     | Valid empty structure                | MEDIUM   |
+
+* Error Handling Tests
+
+** Network Errors
+
+| Test Case                | Scenario                              | Expected Behavior                       | Priority |
+|--------------------------+---------------------------------------+-----------------------------------------+----------|
+| Connection timeout       | API doesn't respond                   | Timeout error after configured time     | HIGH     |
+| DNS resolution failure   | Invalid API URL                       | DNS resolution error                    | MEDIUM   |
+| SSL certificate error    | Invalid certificate                   | Certificate verification error          | HIGH     |
+| Partial response         | Connection drops mid-response         | Error with partial data info            | MEDIUM   |
+| Proxy errors             | Proxy authentication fails            | Proxy error message                     | LOW      |
+
+** API Errors
+
+| Test Case              | HTTP Code | Expected Behavior                          | Priority |
+|------------------------+-----------+--------------------------------------------+----------|
+| Bad Request            | 400       | Show validation errors                     | HIGH     |
+| Unauthorized           | 401       | Authentication required message            | HIGH     |
+| Forbidden              | 403       | Permission denied message                  | HIGH     |
+| Not Found              | 404       | Resource not found message                 | HIGH     |
+| Rate Limited           | 429       | Rate limit message with retry-after        | MEDIUM   |
+| Server Error           | 500       | Server error, suggest retry                | HIGH     |
+| Service Unavailable    | 503       | Service unavailable, maintenance message   | MEDIUM   |
+
+* Performance Tests
+
+** Response Time Tests
+
+| Operation                   | Target Time | Maximum Time | Test Size      | Priority |
+|-----------------------------+-------------+--------------+----------------+----------|
+| Command startup             | <100ms      | 200ms        | -              | HIGH     |
+| Note create                 | <500ms      | 1s           | 1KB content    | HIGH     |
+| Note list (20 items)        | <1s         | 2s           | 20 notes       | HIGH     |
+| Note search                 | <2s         | 5s           | 1000 notes     | MEDIUM   |
+| Sync push (10 files)        | <5s         | 10s          | 10 x 10KB      | MEDIUM   |
+| Sync pull (10 files)        | <5s         | 10s          | 10 x 10KB      | MEDIUM   |
+| Large file upload           | <30s        | 60s          | 5MB file       | LOW      |
+
+** Load Tests
+
+| Test Case                  | Load                        | Expected Behavior                    | Priority |
+|----------------------------+-----------------------------+--------------------------------------+----------|
+| Concurrent operations      | 10 parallel requests        | All complete successfully            | MEDIUM   |
+| Rapid sequential calls     | 100 calls in 10 seconds     | Handles without errors               | MEDIUM   |
+| Large batch operations     | Delete 100 notes            | Completes within timeout             | LOW      |
+| Memory usage               | List 1000 notes             | <100MB memory usage                  | MEDIUM   |
+| Cache performance          | 1000 cached responses       | <10ms cache retrieval                | LOW      |
+
+* Security Tests
+
+** Input Validation
+
+| Test Case                    | Input                                | Expected Result                     | Priority |
+|------------------------------+--------------------------------------+-------------------------------------+----------|
+| SQL injection in title       | ~'; DROP TABLE; --~                  | Properly escaped                    | HIGH     |
+| XSS in content               | ~<script>alert('xss')</script>~      | Properly escaped                    | HIGH     |
+| Path traversal               | ~../../etc/passwd~                   | Path validation error               | HIGH     |
+| Command injection            | ~$(rm -rf /)~                        | Properly escaped                    | HIGH     |
+| Unicode exploits             | Zero-width characters                | Handled safely                      | MEDIUM   |
+| Large input                  | 10MB string                          | Size limit enforced                 | MEDIUM   |
+| Null bytes                   | Strings with \0                      | Handled or rejected                 | LOW      |
+
+** Authentication Security
+
+| Test Case                  | Scenario                            | Expected Result                       | Priority |
+|----------------------------+-------------------------------------+---------------------------------------+----------|
+| Token in logs              | Debug mode with token               | Token masked in output                | HIGH     |
+| Token in error messages    | API error with token                | Token not exposed                     | HIGH     |
+| Token in cache             | Cached requests                     | No token in cache files               | HIGH     |
+| Token in memory            | Memory dump                         | Token encrypted in memory             | MEDIUM   |
+| Token rotation             | Old token after rotation            | Old token rejected                    | MEDIUM   |
+| Multi-factor auth          | If MFA enabled                      | Proper MFA flow                      | LOW      |
+
+* Integration Tests
+
+** Git Integration
+
+| Test Case                   | Command                                      | Expected Result                     | Priority |
+|-----------------------------+----------------------------------------------+-------------------------------------+----------|
+| Pre-commit hook             | Git commit triggers sync                     | Syncs before commit                 | MEDIUM   |
+| Post-commit hook            | Git commit triggers push                     | Pushes after commit                 | MEDIUM   |
+| Merge conflict              | Pull with local changes                      | Handles conflicts gracefully        | HIGH     |
+
+** CI/CD Integration
+
+| Test Case                  | Environment                    | Expected Result                          | Priority |
+|----------------------------+--------------------------------+------------------------------------------+----------|
+| GitHub Actions             | Run in GitHub workflow         | Works with GITHUB_TOKEN                  | HIGH     |
+| GitLab CI                  | Run in GitLab pipeline         | Works with CI variables                  | MEDIUM   |
+| Jenkins                    | Run in Jenkins job             | Works in Jenkins environment              | LOW      |
+| Docker container           | Run inside Docker              | Works with mounted configs               | MEDIUM   |
+
+** Editor Integration
+
+| Test Case                 | Integration                     | Expected Result                         | Priority |
+|---------------------------+---------------------------------+-----------------------------------------+----------|
+| VS Code extension         | Open note in VS Code            | Opens with proper syntax highlighting   | MEDIUM   |
+| Vim plugin                | Edit note in Vim                | Seamless edit/save cycle                | MEDIUM   |
+| Emacs package             | Edit note in Emacs              | Proper major mode                       | LOW      |
+
+* Compatibility Tests
+
+** Platform Tests
+
+| Platform           | Version        | Test Coverage                           | Priority |
+|--------------------+----------------+-----------------------------------------+----------|
+| Ubuntu Linux       | 20.04, 22.04   | Full test suite                         | HIGH     |
+| macOS              | 12, 13, 14     | Full test suite                         | HIGH     |
+| Windows            | 10, 11         | Core functionality                      | MEDIUM   |
+| FreeBSD            | 13, 14         | Core functionality                      | LOW      |
+| Alpine Linux       | 3.18+          | Docker compatibility                    | MEDIUM   |
+
+** Python Version Tests
+
+| Python Version | Test Coverage                      | Priority |
+|----------------+------------------------------------+----------|
+| 3.8            | Full test suite                    | MEDIUM   |
+| 3.9            | Full test suite                    | HIGH     |
+| 3.10           | Full test suite                    | HIGH     |
+| 3.11           | Full test suite                    | HIGH     |
+| 3.12           | Full test suite                    | MEDIUM   |
+
+** Shell Compatibility
+
+| Shell    | Feature                           | Expected Result                        | Priority |
+|----------+-----------------------------------+----------------------------------------+----------|
+| Bash     | Tab completion                    | Full completion support                | HIGH     |
+| Zsh      | Tab completion                    | Full completion support                | HIGH     |
+| Fish     | Tab completion                    | Full completion support                | MEDIUM   |
+| POSIX sh | Basic operations                  | Core commands work                     | LOW      |
+
+* Regression Tests
+
+** Version Migration
+
+| From Version | To Version | Test Case                          | Priority |
+|--------------+------------+------------------------------------+----------|
+| 0.1.0        | 1.0.0      | Config migration                   | HIGH     |
+| 0.x          | 1.0.0      | API compatibility                  | HIGH     |
+| 1.0.0        | 1.1.0      | Backward compatibility             | HIGH     |
+
+** Breaking Changes
+
+| Change                     | Test Case                          | Migration Path                     | Priority |
+|----------------------------+------------------------------------+------------------------------------+----------|
+| Command rename             | Old command still works            | Deprecation warning                | HIGH     |
+| Flag rename                | Old flag still accepted            | Alias to new flag                  | HIGH     |
+| Config format change       | Old format auto-migrated           | Automatic conversion               | HIGH     |
+| API version change         | Support multiple API versions      | Version negotiation                | MEDIUM   |
+
+* Accessibility Tests
+
+** Screen Reader Tests
+
+| Test Case                  | Command                            | Expected Result                       | Priority |
+|----------------------------+------------------------------------+---------------------------------------+----------|
+| Table output               | ~hackmd note list~                 | Readable structure                    | MEDIUM   |
+| Progress indicators        | Long operations                    | Alternative text provided             | MEDIUM   |
+| Error messages             | Various errors                     | Clear, descriptive messages           | HIGH     |
+| Interactive prompts        | ~hackmd note create~               | Proper labels                         | MEDIUM   |
+
+** Keyboard Navigation
+
+| Test Case                 | Scenario                           | Expected Result                        | Priority |
+|---------------------------+------------------------------------+----------------------------------------+----------|
+| Tab completion            | Navigate completions               | Tab/Shift-Tab navigation               | MEDIUM   |
+| Interactive selection     | Choose from list                   | Arrow keys work                        | MEDIUM   |
+| Cancel operation          | Ctrl+C during operation            | Graceful cancellation                  | HIGH     |
+| Input editing             | Edit command line                  | Standard readline keys work            | HIGH     |
+
+* Test Automation
+
+** Test Execution Matrix
+
+| Test Suite         | Frequency      | Duration | Coverage Target | Blocking |
+|--------------------+----------------+----------+-----------------+----------|
+| Unit Tests         | Every commit   | <1 min   | 80%             | Yes      |
+| Integration Tests  | Every PR       | <5 min   | 70%             | Yes      |
+| E2E Tests          | Every PR       | <10 min  | 60%             | Yes      |
+| Performance Tests  | Weekly         | <30 min  | -               | No       |
+| Security Tests     | Weekly         | <20 min  | 100% critical   | Yes      |
+| Compatibility      | Release        | <1 hour  | All platforms   | Yes      |
+
+** Test Data Management
+
+| Data Type            | Storage                    | Refresh Frequency     | Size    |
+|----------------------+----------------------------+-----------------------+---------|
+| Mock API responses   | tests/fixtures/            | As needed             | <10MB   |
+| Test notes           | tests/data/notes/          | Per test run          | <1MB    |
+| Large files          | Generated on demand        | Per test run          | Variable|
+| Config files         | tests/configs/             | Static                | <100KB  |
+
+* Test Implementation Examples
+
+** Unit Test Example
+
+#+begin_src python
+import pytest
+from hackmd.api.client import HackMDClient
+from hackmd.api.models import Note
+
+def test_create_note():
+    """Test note creation with valid data."""
+    client = HackMDClient(token="test_token")
+    note = Note(title="Test Note", content="Test content")
+
+    with mock.patch('httpx.post') as mock_post:
+        mock_post.return_value.json.return_value = {
+            "id": "abc123",
+            "title": "Test Note"
+        }
+        result = client.create_note(note)
+
+    assert result.id == "abc123"
+    assert result.title == "Test Note"
+    mock_post.assert_called_once()
+
+def test_create_note_validation_error():
+    """Test note creation with invalid data."""
+    client = HackMDClient(token="test_token")
+
+    with pytest.raises(ValidationError):
+        Note(title="", content="Test")  # Empty title should fail
+#+end_src
+
+** Integration Test Example
+
+#+begin_src python
+import pytest
+from click.testing import CliRunner
+from hackmd.cli import cli
+
+def test_cli_note_create():
+    """Test CLI note creation command."""
+    runner = CliRunner()
+
+    with mock.patch('hackmd.api.client.HackMDClient') as mock_client:
+        mock_client.return_value.create_note.return_value = Mock(id="abc123")
+
+        result = runner.invoke(cli, [
+            'note', 'create',
+            '--title', 'Test Note',
+            '--content', 'Test content'
+        ])
+
+    assert result.exit_code == 0
+    assert "abc123" in result.output
+    assert "Created note" in result.output
+
+def test_cli_note_create_missing_title():
+    """Test CLI note creation without title in non-interactive mode."""
+    runner = CliRunner()
+
+    result = runner.invoke(cli, [
+        'note', 'create',
+        '--content', 'Test content',
+        '--non-interactive'
+    ])
+
+    assert result.exit_code == 2
+    assert "Missing required parameter" in result.output
+#+end_src
+
+** End-to-End Test Example
+
+#+begin_src python
+import pytest
+from hackmd.tests.e2e import E2ETestCase
+
+class TestNoteWorkflow(E2ETestCase):
+    """Test complete note workflow."""
+
+    def test_full_note_lifecycle(self):
+        """Test create, read, update, delete cycle."""
+        # Create note
+        note_id = self.run_command([
+            'note', 'create',
+            '--title', 'E2E Test Note',
+            '--content', '# Test Content',
+            '--output', 'id'
+        ]).strip()
+
+        assert note_id
+
+        # Read note
+        content = self.run_command(['note', 'get', note_id])
+        assert '# Test Content' in content
+
+        # Update note
+        self.run_command([
+            'note', 'update', note_id,
+            '--append', '\n## New Section'
+        ])
+
+        updated = self.run_command(['note', 'get', note_id])
+        assert '## New Section' in updated
+
+        # Delete note
+        self.run_command(['note', 'delete', note_id, '--force'])
+
+        # Verify deletion
+        with pytest.raises(CommandError):
+            self.run_command(['note', 'get', note_id])
+#+end_src
+
+* Test Reporting
+
+** Coverage Report Format
+
+#+begin_example
+Module                      Lines    Exec  Cover   Missing
+---------------------------------------------------------
+hackmd/__init__.py             10      10   100%
+hackmd/cli.py                 250     200    80%   45-50, 102-110
+hackmd/api/client.py          180     170    94%   201-210
+hackmd/api/models.py          120     120   100%
+hackmd/commands/note.py       300     250    83%   150-180, 290-300
+hackmd/utils/output.py        100      90    90%   78-87
+---------------------------------------------------------
+TOTAL                         960     840    88%
+#+end_example
+
+** Test Result Dashboard
+
+| Test Suite        | Passed | Failed | Skipped | Coverage | Duration |
+|-------------------+--------+--------+---------+----------+----------|
+| Unit Tests        | 245    | 2      | 5       | 88%      | 45s      |
+| Integration Tests | 89     | 1      | 3       | 72%      | 3m 20s   |
+| E2E Tests         | 34     | 0      | 2       | 65%      | 8m 15s   |
+| Performance Tests | 12     | 1      | 0       | -        | 15m 30s  |
+| Security Tests    | 28     | 0      | 1       | 100%     | 5m 45s   |
+|-------------------+--------+--------+---------+----------+----------|
+| **Total**         | 408    | 4      | 11      | 82%      | 32m 55s  |
+
+* Continuous Testing Strategy
+
+** Pre-Commit Hooks
+
+#+begin_src yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: local
+    hooks:
+      - id: unit-tests
+        name: Unit Tests
+        entry: pytest tests/unit -v --timeout=60
+        language: system
+        pass_filenames: false
+
+      - id: lint
+        name: Code Linting
+        entry: pylint hackmd/
+        language: system
+        pass_filenames: false
+#+end_src
+
+** GitHub Actions Workflow
+
+#+begin_src yaml
+# .github/workflows/tests.yml
+name: Tests
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: [3.9, 3.10, 3.11]
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install dependencies
+        run: |
+          pip install -e .[test]
+
+      - name: Run tests
+        run: |
+          pytest tests/ --cov=hackmd --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+#+end_src
+
+---
+*End of Test Matrix Document*

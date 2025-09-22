@@ -1,0 +1,744 @@
+#+TITLE: HackMD CLI Manual Page
+#+AUTHOR: Aidan Pace (aygp-dr)
+#+DATE: 2025-09-21
+#+OPTIONS: toc:nil num:nil
+
+* NAME
+
+hackmd - Command-line interface for HackMD collaborative markdown platform
+
+* SYNOPSIS
+
+#+begin_src text
+hackmd [--global-options] <command> <subcommand> [options] [arguments]
+hackmd auth login [--token TOKEN]
+hackmd note create [--title TITLE] [--content CONTENT] [--file FILE]
+hackmd note list [--limit N] [--format FORMAT]
+hackmd team note create --team TEAM [options]
+hackmd sync push DIRECTORY [--folder FOLDER]
+hackmd --version
+hackmd --help
+#+end_src
+
+* DESCRIPTION
+
+The *hackmd* command provides a comprehensive command-line interface to interact with the HackMD API.
+It enables users to manage notes, teams, permissions, and synchronize content between local files
+and HackMD, all from the terminal.
+
+HackMD CLI follows a resource-oriented command structure (noun-verb) for intuitive operation and
+supports multiple output formats for both human and machine consumption.
+
+* GLOBAL OPTIONS
+
+** --help, -h
+Display help information for the command or subcommand.
+
+** --version, -v
+Display version information.
+
+** --quiet, -q
+Suppress all non-error output. Useful for scripting.
+
+** --verbose
+Enable verbose output. Shows detailed operation information.
+
+** --debug
+Enable debug output. Shows HTTP requests and detailed error traces.
+
+** --output FORMAT, -o FORMAT
+Specify output format. Options: table (default), json, yaml, csv, tsv, raw, id.
+The default is 'table' for TTY and 'json' for non-TTY output.
+
+** --config PATH, -c PATH
+Specify alternate configuration file path.
+Default: ~/.config/hackmd/config.yml
+
+** --profile PROFILE
+Use a specific authentication profile for multi-account support.
+
+** --no-color
+Disable colored output.
+
+** --json
+Shorthand for --output json.
+
+** --no-cache
+Disable response caching for this command.
+
+** --non-interactive
+Disable interactive prompts. Fail if required input is missing.
+
+* COMMANDS
+
+** auth - Authentication management
+
+*** auth login [options]
+Authenticate with HackMD API.
+
+Options:
+  --token TOKEN         API token (prompt if not provided)
+  --profile NAME        Save to named profile
+  --no-keyring         Don't use system keyring
+
+Example:
+  #+begin_src bash
+  hackmd auth login
+  hackmd auth login --token abc123... --profile work
+  #+end_src
+
+*** auth logout [options]
+Remove stored authentication.
+
+Options:
+  --profile NAME        Logout specific profile
+  --all                Clear all profiles
+
+*** auth status
+Show current authentication status.
+
+*** auth list
+List all configured authentication profiles.
+
+*** auth use PROFILE
+Switch to a different authentication profile.
+
+** note - Personal note management
+
+*** note create [options]
+Create a new note.
+
+Options:
+  -t, --title TEXT           Note title
+  -c, --content TEXT         Note content
+  -f, --file PATH            Read content from file
+  -T, --template NAME        Use template
+  -F, --folder PATH          Parent folder path
+  -g, --tag TAGS            Comma-separated tags
+  --read PERMISSION         Read permission (owner/signed_in/everyone)
+  --write PERMISSION        Write permission (owner/signed_in)
+  --comment PERMISSION      Comment permission
+
+Example:
+  #+begin_src bash
+  hackmd note create --title "Meeting Notes" --content "# Agenda"
+  hackmd note create -f meeting.md --tag "meeting,important"
+  hackmd note create --template weekly-report
+  #+end_src
+
+*** note list [options]
+List your notes.
+
+Options:
+  -l, --limit N             Number of results (default: 20)
+  -F, --folder PATH         Filter by folder
+  -g, --tag TAGS           Filter by tags
+  -s, --sort FIELD         Sort by field (title/created/updated)
+  --reverse                Reverse sort order
+
+Example:
+  #+begin_src bash
+  hackmd note list
+  hackmd note list --folder Work --limit 50
+  hackmd note list --tag urgent --sort updated
+  #+end_src
+
+*** note get NOTE_ID [options]
+Display a note's content.
+
+Options:
+  --format FORMAT          Output format (md/html/raw)
+  -o, --output PATH        Save to file
+
+Example:
+  #+begin_src bash
+  hackmd note get abc123
+  hackmd note get abc123 --output note.md
+  #+end_src
+
+*** note show NOTE_ID
+Display note metadata (alias for get with metadata).
+
+*** note update NOTE_ID [options]
+Update an existing note.
+
+Options:
+  -t, --title TEXT          New title
+  -c, --content TEXT        New content
+  -f, --file PATH          Read content from file
+  -a, --append TEXT        Append to content
+  --tag-add TAGS          Add tags
+  --tag-remove TAGS       Remove tags
+  --read PERMISSION       Update read permission
+  --write PERMISSION      Update write permission
+
+Example:
+  #+begin_src bash
+  hackmd note update abc123 --title "Updated Title"
+  hackmd note update abc123 --append "\n## New Section"
+  hackmd note update abc123 --tag-add "reviewed"
+  #+end_src
+
+*** note delete NOTE_ID [options]
+Delete a note.
+
+Options:
+  --force                  Skip confirmation
+  --batch PATH            Delete multiple notes from ID list
+
+Example:
+  #+begin_src bash
+  hackmd note delete abc123
+  hackmd note delete --batch notes-to-delete.txt
+  #+end_src
+
+*** note search QUERY [options]
+Search notes by content or metadata.
+
+Options:
+  -l, --limit N            Number of results
+  -F, --folder PATH        Search in folder
+  -g, --tag TAGS          Filter by tags
+  --title-only            Search titles only
+  --content-only          Search content only
+
+Example:
+  #+begin_src bash
+  hackmd note search "project roadmap"
+  hackmd note search "TODO" --tag work --limit 10
+  #+end_src
+
+*** note export NOTE_ID [options]
+Export a note to various formats.
+
+Options:
+  --format FORMAT          Export format (md/html/pdf)
+  -o, --output PATH        Output file path
+
+Example:
+  #+begin_src bash
+  hackmd note export abc123 --format pdf -o report.pdf
+  #+end_src
+
+*** note permissions NOTE_ID [options]
+Manage note permissions.
+
+Options:
+  --read LEVEL            Set read permission
+  --write LEVEL           Set write permission
+  --comment LEVEL         Set comment permission
+
+Permission levels:
+  - Read: owner, signed_in, everyone
+  - Write: owner, signed_in
+  - Comment: disabled, forbidden, owners, signed_in_users, everyone
+
+Example:
+  #+begin_src bash
+  hackmd note permissions abc123 --read everyone --write signed_in
+  #+end_src
+
+** team - Team operations
+
+*** team list [options]
+List your teams.
+
+Options:
+  --role ROLE             Filter by role (owner/admin/member)
+
+*** team info TEAM
+Display team information.
+
+*** team note create --team TEAM [options]
+Create a team note.
+
+Options:
+  Same as 'note create' with additional:
+  -t, --team TEAM         Team identifier (required)
+
+Example:
+  #+begin_src bash
+  hackmd team note create --team engineering -t "API Docs"
+  #+end_src
+
+*** team note list --team TEAM [options]
+List team notes.
+
+Options:
+  Same as 'note list' with additional:
+  -t, --team TEAM         Team identifier (required)
+
+*** team note get --team TEAM NOTE_ID [options]
+Get team note content.
+
+*** team note update --team TEAM NOTE_ID [options]
+Update team note.
+
+*** team note delete --team TEAM NOTE_ID [options]
+Delete team note.
+
+** sync - Synchronization operations
+
+*** sync push SOURCE [options]
+Push local files to HackMD.
+
+Options:
+  -F, --folder PATH        Target HackMD folder
+  --watch                 Watch for changes
+  --exclude PATTERN       Exclude pattern
+  --dry-run              Preview changes
+  --force                Skip confirmation
+
+Example:
+  #+begin_src bash
+  hackmd sync push ./docs --folder Documentation
+  hackmd sync push . --watch --exclude "*.tmp"
+  #+end_src
+
+*** sync pull [options]
+Pull notes from HackMD to local files.
+
+Options:
+  -F, --folder PATH        Source HackMD folder
+  -o, --output DIR        Output directory
+  --format FORMAT         Export format (md/html)
+  --preserve-structure    Maintain folder structure
+
+Example:
+  #+begin_src bash
+  hackmd sync pull --folder Work -o ./work-notes
+  #+end_src
+
+*** sync status [options]
+Show sync status between local and remote.
+
+Options:
+  -F, --folder PATH        Check specific folder
+  --verbose              Show detailed differences
+
+** config - Configuration management
+
+*** config get [KEY]
+Display configuration values.
+
+Example:
+  #+begin_src bash
+  hackmd config get
+  hackmd config get api.base_url
+  #+end_src
+
+*** config set KEY VALUE
+Set configuration value.
+
+Example:
+  #+begin_src bash
+  hackmd config set defaults.team engineering
+  hackmd config set output.format json
+  #+end_src
+
+*** config edit
+Open configuration file in editor.
+
+*** config reset [KEY]
+Reset configuration to defaults.
+
+** template - Template management
+
+*** template create NAME [options]
+Create a new template.
+
+Options:
+  -f, --file PATH         Template content file
+  -c, --content TEXT      Template content
+  --description TEXT      Template description
+
+Example:
+  #+begin_src bash
+  hackmd template create meeting -f meeting-template.md
+  #+end_src
+
+*** template list
+List available templates.
+
+*** template show NAME
+Display template content.
+
+*** template update NAME [options]
+Update existing template.
+
+*** template delete NAME
+Delete a template.
+
+** export - Export operations
+
+*** export note NOTE_ID [options]
+Export a single note.
+
+Options:
+  --format FORMAT         Export format (md/html/pdf/docx)
+  -o, --output PATH       Output file
+
+*** export folder FOLDER [options]
+Export all notes in a folder.
+
+Options:
+  --format FORMAT         Export format
+  -o, --output DIR        Output directory
+  --recursive            Include subfolders
+
+*** export all [options]
+Export all accessible notes.
+
+Options:
+  --format FORMAT         Export format
+  -o, --output DIR        Output directory
+  --separate-folders     Maintain folder structure
+
+** import - Import operations
+
+*** import file PATH [options]
+Import a file as a note.
+
+Options:
+  -F, --folder PATH       Target folder
+  --format FORMAT        Input format (md/html/docx)
+  --title TEXT          Override title
+
+Example:
+  #+begin_src bash
+  hackmd import file document.md --folder Work
+  #+end_src
+
+*** import directory PATH [options]
+Import all files in a directory.
+
+Options:
+  -F, --folder PATH       Target folder
+  --recursive            Include subdirectories
+  --exclude PATTERN      Exclude pattern
+
+** api - Direct API access
+
+*** api METHOD ENDPOINT [options]
+Make direct API calls.
+
+Options:
+  -d, --data DATA         Request body
+  -H, --header HEADER     Add header
+  --paginate             Auto-paginate results
+
+Example:
+  #+begin_src bash
+  hackmd api GET /notes
+  hackmd api POST /notes -d '{"title":"New Note"}'
+  hackmd api GET /teams --paginate
+  #+end_src
+
+** cache - Cache management
+
+*** cache clear [options]
+Clear cached data.
+
+Options:
+  --all                  Clear all cache
+  --expired             Clear only expired entries
+
+*** cache info
+Display cache statistics.
+
+** completion - Shell completion
+
+*** completion bash
+Generate bash completion script.
+
+*** completion zsh
+Generate zsh completion script.
+
+*** completion fish
+Generate fish completion script.
+
+Example:
+  #+begin_src bash
+  hackmd completion bash > /etc/bash_completion.d/hackmd
+  #+end_src
+
+** help - Help system
+
+*** help [COMMAND]
+Display help for a command.
+
+Example:
+  #+begin_src bash
+  hackmd help
+  hackmd help note
+  hackmd help note create
+  #+end_src
+
+* CONFIGURATION
+
+** Configuration Files
+
+Configuration is loaded from multiple sources in order of precedence:
+
+1. Command-line flags (highest priority)
+2. Environment variables
+3. Project configuration: ./.hackmd.yml
+4. User configuration: ~/.config/hackmd/config.yml
+5. System configuration: /etc/hackmd/config.yml (lowest priority)
+
+** Configuration Format
+
+The configuration file uses YAML format:
+
+#+begin_src yaml
+api:
+  token: ${HACKMD_API_TOKEN}  # Environment variable expansion
+  base_url: https://api.hackmd.io/v1
+  timeout: 30
+  retry: 3
+
+defaults:
+  team: engineering
+  folder: Work
+  permission:
+    read: signed_in
+    write: owner
+    comment: signed_in_users
+
+output:
+  format: table
+  color: auto
+  pager: less -R
+
+sync:
+  ignore_patterns:
+    - "*.tmp"
+    - ".git/**"
+  conflict_strategy: prompt
+
+aliases:
+  ns: note search
+  nc: note create
+#+end_src
+
+** Environment Variables
+
+| Variable              | Description                      | Default                   |
+|-----------------------+----------------------------------+---------------------------|
+| HACKMD_API_TOKEN      | API authentication token         | -                         |
+| HACKMD_API_URL        | API base URL                     | https://api.hackmd.io/v1  |
+| HACKMD_DEFAULT_TEAM   | Default team for operations     | -                         |
+| HACKMD_CONFIG_DIR     | Configuration directory          | ~/.config/hackmd          |
+| HACKMD_CACHE_DIR      | Cache directory                  | ~/.cache/hackmd           |
+| HACKMD_EDITOR         | Preferred editor                 | $EDITOR or vi             |
+| HACKMD_PAGER          | Preferred pager                  | $PAGER or less            |
+| HACKMD_OUTPUT_FORMAT  | Default output format            | table                     |
+| HACKMD_INTERACTIVE    | Enable interactive mode          | true                      |
+| NO_COLOR              | Disable colored output           | -                         |
+| DEBUG                 | Enable debug output              | -                         |
+
+* FILES
+
+** ~/.config/hackmd/config.yml
+User configuration file.
+
+** ~/.config/hackmd/templates/
+User-defined templates directory.
+
+** ~/.cache/hackmd/
+Response cache directory.
+
+** ~/.local/share/hackmd/
+Application data directory.
+
+** /etc/hackmd/config.yml
+System-wide configuration file.
+
+* EXIT STATUS
+
+The hackmd command returns the following exit codes:
+
+| Code | Description                          |
+|------+--------------------------------------|
+|    0 | Success                              |
+|    1 | General error                        |
+|    2 | Usage error (invalid arguments)     |
+|    3 | Authentication error                 |
+|    4 | Network error                        |
+|    5 | Resource not found                   |
+|    6 | Permission denied                    |
+|    7 | Validation error                     |
+|    8 | Conflict error                       |
+|    9 | Rate limit exceeded                  |
+|  130 | Interrupted (Ctrl+C)                 |
+
+* EXAMPLES
+
+** Basic Workflow
+
+#+begin_src bash
+# Authenticate
+hackmd auth login
+
+# Create a note
+hackmd note create --title "Project Ideas" --content "# My Ideas\n\n- Idea 1"
+
+# List notes
+hackmd note list
+
+# Update a note
+hackmd note update abc123 --append "\n- Idea 2"
+
+# Search notes
+hackmd note search "project"
+
+# Delete a note
+hackmd note delete abc123
+#+end_src
+
+** Team Collaboration
+
+#+begin_src bash
+# List teams
+hackmd team list
+
+# Create team note
+hackmd team note create --team engineering \
+  --title "Architecture Decision" \
+  --template adr
+
+# Set permissions
+hackmd team note permissions --team engineering abc123 \
+  --read everyone \
+  --write signed_in
+#+end_src
+
+** Bulk Operations
+
+#+begin_src bash
+# Export all notes
+hackmd export all --format pdf -o ./exports/
+
+# Import markdown files
+for file in *.md; do
+  hackmd import file "$file" --folder "Imported"
+done
+
+# Batch delete
+echo "abc123\ndef456\nghi789" > notes.txt
+hackmd note delete --batch notes.txt
+#+end_src
+
+** Synchronization
+
+#+begin_src bash
+# Initial sync
+hackmd sync push ./docs --folder "Documentation"
+
+# Watch for changes
+hackmd sync push ./docs --folder "Documentation" --watch
+
+# Two-way sync
+hackmd sync pull --folder "Blog" -o ./blog/
+# Edit files locally
+hackmd sync push ./blog/ --folder "Blog"
+#+end_src
+
+** Automation
+
+#+begin_src bash
+# Non-interactive mode for scripts
+hackmd --non-interactive note create \
+  --title "Daily Report $(date +%Y-%m-%d)" \
+  --file report.md
+
+# JSON output for processing
+hackmd note list --json | jq '.items[] | .title'
+
+# Use in CI/CD
+hackmd note update "${RELEASE_NOTE_ID}" \
+  --content "$(cat CHANGELOG.md)" \
+  --tag "release,v${VERSION}"
+#+end_src
+
+** Advanced API Usage
+
+#+begin_src bash
+# Direct API call
+hackmd api GET /notes?limit=100
+
+# Custom headers
+hackmd api POST /notes \
+  -H "X-Custom-Header: value" \
+  -d '{"title":"API Test","content":"Test content"}'
+
+# Paginated results
+hackmd api GET /teams/engineering/notes --paginate
+#+end_src
+
+* TROUBLESHOOTING
+
+** Authentication Issues
+
+If authentication fails:
+1. Verify your API token is correct
+2. Check token permissions on HackMD website
+3. Ensure system keyring is accessible
+4. Try --no-keyring flag if keyring issues persist
+
+** Network Problems
+
+For network-related errors:
+1. Check internet connectivity
+2. Verify API URL in configuration
+3. Check proxy settings if behind firewall
+4. Try increasing timeout: hackmd config set api.timeout 60
+
+** Permission Errors
+
+If you get permission denied:
+1. Verify you have appropriate permissions for the resource
+2. Check if you're using the correct team context
+3. Ensure your token has required scopes
+
+** Rate Limiting
+
+If rate limited:
+1. Wait for the specified retry-after period
+2. Reduce request frequency
+3. Use caching: hackmd config set cache.ttl 300
+4. Batch operations when possible
+
+* SEE ALSO
+
+**hackmd-vim(1)**, **hackmd-emacs(1)**, **git(1)**, **gh(1)**
+
+Project homepage: https://github.com/aygp-dr/hackmd-cli-toolkit
+
+API documentation: https://api.hackmd.io/v1/docs
+
+HackMD web interface: https://hackmd.io
+
+* BUGS
+
+Report bugs at: https://github.com/aygp-dr/hackmd-cli-toolkit/issues
+
+When reporting bugs, please include:
+- Command that triggered the bug
+- Error message and stack trace (use --debug)
+- HackMD CLI version (hackmd --version)
+- Operating system and version
+
+* AUTHOR
+
+Aidan Pace <apace@defrecord.com>
+
+* COPYRIGHT
+
+Copyright (C) 2025 Aidan Pace. MIT License.
+
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+---
+*Generated: 2025-09-21*
