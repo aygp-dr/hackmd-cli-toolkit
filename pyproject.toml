@@ -7,15 +7,43 @@ packages = ["src/hackmd"]
 
 [project]
 name = "hackmd-cli"
-version = "0.1.0"
+version = "0.2.0"
 description = "Command-line interface for HackMD"
 readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.8"
 authors = [
     { name = "Aidan Pace", email = "apace@defrecord.com" }
 ]
+maintainers = [
+    { name = "Aidan Pace", email = "apace@defrecord.com" },
+    { name = "Jason Walsh", email = "j@wal.sh" }
+]
+keywords = ["hackmd", "cli", "markdown", "notes", "api"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Markup :: Markdown",
+]
+
+[project.urls]
+Homepage = "https://github.com/aygp-dr/hackmd-cli-toolkit"
+Documentation = "https://github.com/aygp-dr/hackmd-cli-toolkit/tree/main/docs"
+Repository = "https://github.com/aygp-dr/hackmd-cli-toolkit.git"
+Issues = "https://github.com/aygp-dr/hackmd-cli-toolkit/issues"
 dependencies = [
     "click>=8.0",
+    "requests>=2.28",
     "httpx>=0.24",
     "pydantic>=2.0",
     "rich>=13.0",

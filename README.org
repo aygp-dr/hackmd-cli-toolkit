@@ -2,6 +2,11 @@
 #+AUTHOR: Aidan Pace (aygp-dr)
 #+DATE: 2025-09-21
 
+[[https://pypi.org/project/hackmd-cli/][https://img.shields.io/pypi/v/hackmd-cli.svg]]
+[[https://github.com/aygp-dr/hackmd-cli-toolkit/blob/main/LICENSE][https://img.shields.io/github/license/aygp-dr/hackmd-cli-toolkit.svg]]
+[[https://github.com/aygp-dr/hackmd-cli-toolkit/actions][https://img.shields.io/github/actions/workflow/status/aygp-dr/hackmd-cli-toolkit/tests.yml?label=tests]]
+[[https://pypi.org/project/hackmd-cli/][https://img.shields.io/pypi/pyversions/hackmd-cli.svg]]
+
 * Overview
 
 The HackMD CLI Toolkit provides a powerful command-line interface to interact with the [[https://api.hackmd.io][HackMD API]]. Designed following industry best practices from tools like GitHub CLI, AWS CLI, and Git, this toolkit enables seamless management of notes, teams, and permissions directly from your terminal.
