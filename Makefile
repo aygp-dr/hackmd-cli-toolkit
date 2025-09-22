@@ -1,6 +1,6 @@
 # HackMD CLI Toolkit Makefile
 
-.PHONY: all install dev test clean readme
+.PHONY: all install dev test clean readme build publish publish-test
 
 all: readme install
 
@@ -34,5 +34,21 @@ run-status:
 
 run-list:
 	hackmd note list
+
+build: readme
+	@echo "Building distribution packages..."
+	python -m build
+
+publish-test: build
+	@echo "Publishing to TestPyPI..."
+	twine upload --repository testpypi dist/*
+
+publish: build
+	@echo "Publishing to PyPI..."
+	twine upload dist/*
+
+check-dist: build
+	@echo "Checking distribution..."
+	twine check dist/*
 
 .DEFAULT_GOAL := all
