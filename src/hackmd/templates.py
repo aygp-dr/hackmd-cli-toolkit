@@ -48,7 +48,6 @@ DEFAULT_TEMPLATES = {
 
 ---
 Tags: #journal #daily #{{month}} #{{year}}""",
-
     "meeting-notes.md": """# Meeting: {{title}}
 
 **Date:** {{date}}
@@ -83,7 +82,6 @@ Tags: #journal #daily #{{month}} #{{year}}""",
 
 ---
 Tags: #meeting #{{project}} #{{team}}""",
-
     "bug-report.md": """# Bug Report: {{title}}
 
 **Reported By:** {{reporter}}
@@ -117,7 +115,6 @@ What actually happens:
 
 ---
 Tags: #bug #{{component}} #{{severity}}""",
-
     "project-readme.md": """# {{project_name}}
 
 [![License](https://img.shields.io/badge/license-{{license}}-blue.svg)](LICENSE)
@@ -155,7 +152,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 Tags: #project #{{language}} #{{category}}""",
-
     "weekly-review.md": """# Weekly Review - Week {{week_number}}, {{year}}
 
 ## Week Overview
@@ -185,7 +181,7 @@ Tags: #project #{{language}} #{{category}}""",
 -
 
 ---
-Tags: #weekly-review #{{month}} #{{year}}"""
+Tags: #weekly-review #{{month}} #{{year}}""",
 }
 
 
@@ -220,7 +216,9 @@ def get_template(name: str) -> Optional[str]:
     return template_file.read_text()
 
 
-def render_template(name: str, variables: Optional[Dict[str, str]] = None) -> Optional[str]:
+def render_template(
+    name: str, variables: Optional[Dict[str, str]] = None
+) -> Optional[str]:
     """Render a template with variables replaced."""
     content = get_template(name)
     if not content:
