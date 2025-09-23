@@ -1,0 +1,16 @@
+#!/bin/bash
+# HackMD CLI wrapper with uv for fast dependency management
+
+# Get the directory of this script
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Check if uv is installed
+if ! command -v uv &> /dev/null; then
+    echo "Error: uv is not installed. Install it with:"
+    echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
+    exit 1
+fi
+
+# Run with uv - it will automatically manage the virtual environment
+# and cache dependencies for fast subsequent runs
+exec uv run --quiet python -m hackmd.cli "$@"

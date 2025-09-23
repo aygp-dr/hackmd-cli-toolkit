@@ -2,10 +2,10 @@
 #+AUTHOR: Aidan Pace (aygp-dr)
 #+DATE: 2025-09-21
 
-[[https://github.com/aygp-dr/hackmd-cli-toolkit/releases][https://img.shields.io/github/v/release/aygp-dr/hackmd-cli-toolkit?include_prereleases]]
-[[https://github.com/aygp-dr/hackmd-cli-toolkit/actions/workflows/tests.yml][https://img.shields.io/github/actions/workflow/status/aygp-dr/hackmd-cli-toolkit/tests.yml?branch=main&label=tests]]
+[[https://github.com/aygp-dr/hackmd-cli-toolkit/releases][https://img.shields.io/github/v/release/aygp-dr/hackmd-cli-toolkit.svg?include_prereleases]]
+[[https://github.com/aygp-dr/hackmd-cli-toolkit/actions/workflows/tests.yml][https://img.shields.io/github/actions/workflow/status/aygp-dr/hackmd-cli-toolkit/tests.yml.svg?branch=main&label=tests]]
 [[https://github.com/aygp-dr/hackmd-cli-toolkit/blob/main/LICENSE][https://img.shields.io/badge/license-MIT-blue.svg]]
-[[https://www.python.org/downloads/][https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue]]
+[[https://www.python.org/downloads/][https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue.svg]]
 
 * Overview
 
@@ -83,6 +83,11 @@ hackmd note update NOTE_ID --append "\n## New Section"
 
 # Create team note
 hackmd team note create --team engineering --title "API Design"
+
+# Work with templates
+hackmd template list                                    # Show available templates
+hackmd template create daily-journal                    # Create note from template
+hackmd template create meeting-notes --title "Sprint Planning" --vars "team=backend" "project=api-v2"
 #+end_src
 
 * Command Structure
@@ -97,8 +102,8 @@ Resources:
   - team      Team operations
   - auth      Authentication
   - config    Configuration
+  - template  Note templates
   - sync      Synchronization
-  - template  Template management
   - api       Direct API access
 #+end_src
 
@@ -168,6 +173,40 @@ for note in notes:
         "--format", "md",
         "--output", f"{backup_dir}/{note['title']}.md"
     ])
+#+end_src
+
+* Performance Optimization
+
+The HackMD CLI is optimized for fast startup and execution:
+
+** Fast Dependency Management with uv
+
+The CLI uses [[https://github.com/astral-sh/uv][uv]] for ultra-fast Python package management:
+
+#+begin_src bash
+# First run: uv installs dependencies (cached)
+./hackmd note list  # ~2s on first run
+
+# Subsequent runs use cached environment
+./hackmd note list  # <0.5s on cached runs
+#+end_src
+
+** Template System
+
+Templates are automatically initialized in =~/.hackmd/templates/= on first run:
+
+- daily-journal.md - Daily journaling template
+- meeting-notes.md - Meeting documentation
+- bug-report.md - Bug tracking template
+- project-readme.md - Project documentation
+- weekly-review.md - Weekly retrospective
+
+Templates support variable substitution:
+
+#+begin_src bash
+hackmd template create meeting-notes \
+  --title "Sprint Planning" \
+  --vars "team=backend" "project=api-v2" "date=2025-09-21"
 #+end_src
 
 * Architecture

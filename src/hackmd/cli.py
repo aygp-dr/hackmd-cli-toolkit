@@ -6,12 +6,14 @@ import json
 import sys
 from pathlib import Path
 from getpass import getpass
+from . import templates
 
 @click.group()
 @click.version_option()
 def cli():
     """HackMD CLI - Manage your HackMD notes from the terminal."""
-    pass
+    # Initialize templates on first run
+    templates.initialize_templates()
 
 @cli.group()
 def auth():
@@ -346,6 +348,103 @@ def _verify_token(token):
     except Exception as e:
         click.echo(f"\n⚠ Could not verify token: {e}", err=True)
         return None
+
+@cli.group()
+def template():
+    """Manage note templates."""
+    pass
+
+@template.command()
+def list():
+    """List available templates."""
+    template_list = templates.list_templates()
+    if template_list:
+        click.echo("Available templates:")
+        for t in template_list:
+            click.echo(f"  • {t}")
+    else:
+        click.echo("No templates found. Run 'hackmd template init' to create default templates.")
+
+@template.command()
+def init():
+    """Initialize default templates."""
+    created = templates.initialize_templates()
+    if created:
+        click.echo(f"✓ Created {len(created)} templates:")
+        for t in created:
+            click.echo(f"  • {t}")
+    else:
+        click.echo("✓ Templates already initialized")
+    click.echo(f"\nTemplates location: {templates.TEMPLATES_DIR}")
+
+@template.command()
+@click.argument('template_name')
+@click.option('--title', '-t', help='Note title')
+@click.option('--vars', '-v', multiple=True, help='Template variables (key=value)')
+def create(template_name, title, vars):
+    """Create a note from a template."""
+    # Parse variables
+    variables = {}
+    for var in vars:
+        if '=' in var:
+            key, value = var.split('=', 1)
+            variables[key] = value
+
+    # Render template
+    content = templates.render_template(template_name, variables)
+    if not content:
+        click.echo(f"✗ Template '{template_name}' not found", err=True)
+        click.echo("Run 'hackmd template list' to see available templates.")
+        sys.exit(1)
+
+    # Use title from template if not provided
+    if not title:
+        if template_name == 'daily-journal':
+            from datetime import datetime
+            title = f"Daily Journal - {datetime.now().strftime('%Y-%m-%d')}"
+        elif template_name == 'weekly-review':
+            from datetime import datetime
+            title = f"Weekly Review - Week {datetime.now().isocalendar()[1]}"
+        else:
+            title = template_name.replace('-', ' ').title()
+
+    # Create note
+    config = _load_config()
+    if not config:
+        click.echo("✗ Not authenticated. Run: hackmd auth login", err=True)
+        sys.exit(1)
+
+    import requests
+    token = config['api_token']
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json'
+    }
+
+    data = {
+        'title': title,
+        'content': content,
+        'readPermission': 'owner',
+        'writePermission': 'owner',
+        'commentPermission': 'everyone'
+    }
+
+    try:
+        response = requests.post('https://api.hackmd.io/v1/notes', headers=headers, json=data)
+        if response.status_code in [200, 201]:
+            note = response.json()
+            note_id = note.get('id', 'unknown')
+            click.echo(f"✓ Note created from template '{template_name}'!")
+            click.echo(f"  ID: {note_id}")
+            click.echo(f"  Title: {title}")
+            if 'publishLink' in note:
+                click.echo(f"  URL: {note['publishLink']}")
+        else:
+            click.echo(f"✗ Error creating note: {response.status_code}", err=True)
+            if response.text:
+                click.echo(f"  {response.text}", err=True)
+    except Exception as e:
+        click.echo(f"✗ Error: {e}", err=True)
 
 def main():
     """Main entry point."""
